@@ -125,47 +125,188 @@ Use a record for immutable request/response data where appropriate, but keep JPA
 
 ### Step 2 — First endpoint and dependency injection
 
-Create `controller/HealthController.java`:
+The working example is in `springboot2026 2/src/main/java/com/revision/springboot2026/`. Read `Springboot2026Application.java`, then `controller/HealthController.java`, and finally `service/HealthService.java`. The Java files have short comments beside their Spring annotations; this section explains the same ideas as a request flow.
+
+#### Run it and see the response
+
+Run `Springboot2026Application.main()` from IntelliJ. Wait until the startup log says the application started. In a browser, visit `http://localhost:8080/api/health`, or call it from a terminal:
+
+```bash
+curl -i http://localhost:8080/api/health
+```
+
+Expected response body: `{"status":"UP"}`. The `-i` option asks curl to show the HTTP response status and headers too, including `HTTP/1.1 200`. These prints come from the running web server; `PracticeDemo.main()` is a separate plain-Java program. Stop the server with IntelliJ's red stop button.
+
+#### Follow one request
+
+```text
+Browser or curl
+      ↓ GET /api/health
+HealthController.health()
+      ↓ calls currentStatus()
+HealthService.currentStatus()
+      ↓ returns "UP"
+HealthController returns a Map
+      ↓ Spring converts it to JSON
+Browser or curl receives {"status":"UP"}
+```
+
+The controller handles the web/HTTP part. The service holds the application rule. The controller returns a Java `Map<String, String>`; Spring's web support converts that result into JSON for the HTTP response. The client never receives a Java object, only response bytes and headers.
+
+#### What each annotation asks Spring to do
+
+An annotation is metadata written with `@`. It is not a Java keyword and does not replace the method or class. Spring reads the metadata and performs framework work that would otherwise require lower-level setup and request-handling code.
+
+| Annotation | What Spring does | What boilerplate it saves us from |
+|---|---|---|
+| `@SpringBootApplication` | Marks the starting configuration. It brings together Spring Boot configuration, auto-configuration, and component scanning. Scanning starts at this class's package (`com.revision.springboot2026`) and includes child packages such as `controller` and `service`. | Manually assembling much of the application configuration and listing each discovered class. It does not remove the `main` method; `SpringApplication.run(...)` still starts the application. |
+| `@RestController` | Registers a web controller and treats its return values as response bodies. It combines the roles of `@Controller` and `@ResponseBody`. | Writing a servlet by hand, manually routing to this class, and manually writing the returned map as JSON. |
+| `@RequestMapping("/api/health")` | Sets the shared URL prefix for this controller. | Repeating the complete `/api/health` path on every handler method. |
+| `@GetMapping` | Connects the method to an HTTP GET request at the controller path. It is a shortcut for `@RequestMapping(method = RequestMethod.GET)`. | Checking the request method and URL manually in code. |
+| `@Service` | Marks `HealthService` as an application service for Spring to discover and manage. It is a specialized kind of component marker. | Writing setup code that manually creates the service with `new` and stores it for the application. |
+| `@Component` | General marker for a class Spring should discover and manage when it has no more specific role. | Manually registering a general-purpose object in Spring's configuration. Use `@Service` for business logic and `@Repository` for data access when those roles fit better. |
+| `@Repository` | Marks a handwritten data-access class. Spring can apply persistence exception translation; Spring Data repository interfaces are usually discovered through Spring Data configuration. | Manually wiring the data-access object and, in some cases, translating persistence exceptions. This health example has no database, so it does not need a repository. |
+
+The “boilerplate it saves us from” column describes the framework work Spring handles. An annotation does not magically replace all code: for example, `@GetMapping` still needs a Java method to run, and `@SpringBootApplication` still needs `SpringApplication.run(...)` in `main`.
+
+#### What component scanning and the application context mean
+
+**Component scanning** is Spring looking through the application package for classes marked with roles such as `@RestController` and `@Service`. The application class is in the parent package, so Spring can find both classes in the subpackages. If a class is outside the scan area, Spring may not know it exists.
+
+A **bean** is an object Spring creates and manages. The **application context** is Spring's registry of beans and their relationships. At startup, Spring finds `HealthController` and `HealthService`, creates the service bean, and sees that the controller constructor needs a `HealthService`.
+
+#### Constructor injection: how the service gets into the controller
 
 ```java
-@RestController
-@RequestMapping("/api/health")
-class HealthController {
-    @GetMapping
-    Map<String, String> health() {
-        return Map.of("status", "UP");
-    }
+private final HealthService healthService;
+
+public HealthController(HealthService healthService) {
+    this.healthService = healthService;
 }
 ```
 
-Run the app and call `curl -i http://localhost:8080/api/health`. Then explain in your own words how component scanning, the application context, and `@RestController` work. Prefer constructor injection when adding collaborators; practice `@Component`, `@Service`, and `@Repository` by assigning each a clear role.
+The constructor says, “a `HealthController` needs a `HealthService` to be created.” Spring finds the matching service bean and passes it as the constructor argument. This is **dependency injection**: the controller receives an object it depends on, rather than making one itself with `new HealthService()`. `final` means this dependency is assigned once. With one constructor, Spring can use it automatically; no `@Autowired` annotation is needed here.
+
+#### Try it yourself
+
+1. Change `"UP"` in `HealthService.currentStatus()` to `"LEARNING"`, restart the app, and request the URL again. The response should change without editing the controller.
+2. Change the path in `@RequestMapping`, restart, and request the old path and new path. Only the new path should work.
+3. Explain this flow in your own words: request → controller → service → controller response.
+
+This endpoint returns a fixed status, so it demonstrates routing and dependency injection but does not check whether a database or another dependency is actually healthy. A real health check can be added later.
 
 ### Step 3 — Add a resource and CRUD REST API
 
-Create a `Book` domain type with an ID, title, author, and publication year. Add endpoints with conventional HTTP behavior:
+The first CRUD version is implemented in the `domain`, `dto`, `repository`, `service`, and `controller` packages. Read the code in that order to follow one book operation from storage up to HTTP.
+
+#### The layers and why they are separate
+
+```text
+HTTP request / JSON
+        ↓
+BookController       Knows URLs, HTTP methods, and status codes
+        ↓
+BookService          Knows the application operation
+        ↓
+BookRepository       Describes book storage operations
+        ↓
+InMemoryBookRepository stores books in a Map
+```
+
+- `domain/Book.java` is the application's book object: ID, title, author, and publication year. It is a plain Java class, not a JPA entity yet.
+- `dto/BookRequest.java` is the data the client may send. It does not contain an ID because the server assigns one. `dto/BookResponse.java` is the data sent back. These records keep the API's JSON shape separate from the storage object.
+- `repository/BookRepository.java` is an interface: it names operations (`findAll`, `findById`, `save`, `deleteById`) without choosing a storage implementation. `InMemoryBookRepository.java` implements those operations using a concurrent map and an ID counter. The data disappears when the application stops.
+- `service/BookService.java` performs the operation and converts between domain books and response DTOs. It does not know about URL paths or HTTP status codes.
+- `controller/BookController.java` connects HTTP requests to service calls. It does not know that this version stores data in a map.
+
+This separation means we can replace the map implementation with database storage later without changing what a controller URL means. The classes are Spring beans: `@Repository` marks the storage implementation, `@Service` marks the service, and `@RestController` marks the HTTP controller. Spring finds these classes by scanning below `com.revision.springboot2026` and supplies dependencies through their constructors.
+
+#### Read the controller annotations and request parameters
+
+| Code | Meaning | Work Spring handles |
+|---|---|---|
+| `@RestController` | This class handles web requests; return values are response bodies. | Routes matching requests to its methods and converts Java response data to JSON. |
+| `@RequestMapping("/api/books")` | Shared URL prefix for this controller. | Combines the prefix with each method's path. |
+| `@GetMapping` | Handle GET at `/api/books`. | Matches HTTP method and URL instead of hand-written request checks. |
+| `@GetMapping("/{id}")` | Handle GET at a URL such as `/api/books/12`. | Finds the path and provides the value `12` to the method. |
+| `@PathVariable long id` | Take `id` from the variable URL segment. | Parses the text segment into a Java `long`. |
+| `@PostMapping` / `@PutMapping` / `@DeleteMapping` | Handle POST / PUT / DELETE requests at the controller path (with `/{id}` for the latter two). | Selects the method using HTTP verb and URL. |
+| `@RequestBody BookRequest request` | Read the JSON request body and make a `BookRequest` object from it. | Parses JSON and assigns its fields to the Java record. |
+
+`ResponseEntity<BookResponse>` lets a controller choose both the body and HTTP status. `ResponseEntity.ok(...)` means 200, `created(...)` means 201 and includes a `Location` header, `notFound()` means 404, and `noContent()` means 204 with no body. Returning a plain `List` or record lets Spring choose the normal 200 response and convert the body to JSON.
+
+#### The five routes and expected behavior
 
 | Method | Path | Behavior |
 |---|---|---|
 | `GET` | `/api/books` | List books |
 | `GET` | `/api/books/{id}` | Fetch one book or return 404 |
 | `POST` | `/api/books` | Create a book and return 201 |
-| `PUT` | `/api/books/{id}` | Replace a book |
-| `DELETE` | `/api/books/{id}` | Delete a book and return 204 |
+| `PUT` | `/api/books/{id}` | Replace all book fields or return 404 when the ID is missing |
+| `DELETE` | `/api/books/{id}` | Delete the book and return 204, or 404 when the ID is missing |
 
-Organize code by responsibility:
+#### Try the endpoints
+
+Start `Springboot2026Application.main()` in IntelliJ. Run these commands from a terminal. The POST response includes the created ID; this in-memory example starts IDs at 1 after each app restart.
+
+List all books (initially an empty JSON array):
+
+```bash
+curl -i http://localhost:8080/api/books
+```
+
+Create a book. JSON field names match the `BookRequest` record component names:
+
+```bash
+curl -i -X POST http://localhost:8080/api/books \
+  -H 'Content-Type: application/json' \
+  -d '{"title":"Effective Java","author":"Joshua Bloch","publicationYear":2018}'
+```
+
+Fetch the created book (assuming the returned ID was `1`):
+
+```bash
+curl -i http://localhost:8080/api/books/1
+```
+
+Replace all editable book fields. PUT is a full replacement in this exercise, so send every field:
+
+```bash
+curl -i -X PUT http://localhost:8080/api/books/1 \
+  -H 'Content-Type: application/json' \
+  -d '{"title":"Effective Java, Third Edition","author":"Joshua Bloch","publicationYear":2018}'
+```
+
+Delete it. A successful delete has status 204 and an empty response body:
+
+```bash
+curl -i -X DELETE http://localhost:8080/api/books/1
+```
+
+Try `GET /api/books/999` and `DELETE /api/books/999` too; both should return 404. Stop the app with IntelliJ's stop button when finished.
+
+#### Trace POST from JSON to the response
+
+For POST, Spring reads the JSON body because of `@RequestBody` and creates `BookRequest`. The controller passes that request to `BookService.create`. The service makes a `Book` with a temporary ID of 0 and asks the repository to save it. The map implementation assigns the next ID, stores it, and returns it. The service maps the saved book into `BookResponse`. Finally, the controller returns HTTP 201 with the response body and a `Location` header. In later steps validation and consistent error responses will improve how invalid request data is handled.
+
+#### Why use an interface for the repository?
+
+`BookService` depends on the `BookRepository` interface, not `InMemoryBookRepository` directly. The interface is the promise of what storage can do; the in-memory class is one way to do it. Later we can provide a database implementation with the same operations. This is also dependency injection: Spring sees the repository constructor parameter and supplies the repository bean. There is one implementation now, so Spring knows which object to pass.
+
+The Map is suitable for this first local exercise: looking up by key is expected O(1), while listing all books is O(n). It is not persistent storage: a restart clears every book, and the data is not shared across application instances. Step 5 replaces it with JPA and a database.
+
+The package layout now follows these responsibilities:
 
 ```text
 com.revision.springboot2026
 ├── controller/       # HTTP mapping, status codes, request/response types
 ├── service/          # business rules and transaction boundary
-├── repository/       # data access
-├── domain/           # JPA entities and domain types
+├── repository/       # storage contract and in-memory implementation
+├── domain/           # application domain objects
 ├── dto/              # API request and response models
 ├── exception/        # domain errors and HTTP error mapping
 └── config/           # explicit application configuration
 ```
-
-Start with an in-memory `Map<Long, Book>` repository so you can focus on API behavior. Then replace it with JPA. Keep HTTP concerns out of the service and persistence details out of the controller.
 
 ### Step 4 — Validation and predictable errors
 

@@ -7,7 +7,12 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 /** Receives HTTP requests for health information and turns the result into a web response. */
+// Spring registers this class as a web controller. This combines the roles of
+// @Controller and @ResponseBody: Spring routes requests here and writes returned
+// values into the response (using its JSON converter for this Map).
 @RestController
+// Adds this URL prefix to the routes declared by methods in this class.
+// Without it, each method would need to declare its full URL path.
 @RequestMapping("/api/health")
 public class HealthController {
     private final HealthService healthService;
@@ -17,7 +22,9 @@ public class HealthController {
         this.healthService = healthService;
     }
 
-    /** Handles GET /api/health. Spring converts the returned map to JSON. */
+    // Registers this method for HTTP GET at /api/health. It is a convenient
+    // short form of @RequestMapping(method = RequestMethod.GET); Spring does
+    // the URL and HTTP-method matching instead of handwritten request checks.
     @GetMapping
     public Map<String, String> health() {
         return Map.of("status", healthService.currentStatus());
