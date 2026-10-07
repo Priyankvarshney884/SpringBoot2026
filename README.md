@@ -453,6 +453,37 @@ After CRUD and tests work, implement these as focused exercises:
 - A Dockerfile and compose-based local database if containers are part of your workflow.
 - Concurrency and transaction behavior: isolation, lost updates, optimistic locking, and idempotency.
 
+### Optional — Deploy the API with GitHub Actions and Google Cloud Run
+
+This repository has a Dockerfile in `springboot2026 2/` and a workflow at `.github/workflows/deploy-cloud-run.yml`. The workflow deploys changes from the `master` branch to Cloud Run. You can also start it manually from GitHub's **Actions** tab. The source directory contains a Dockerfile, so Cloud Build uses it to build the Java 21 container before Cloud Run starts it.
+
+#### Why Cloud Run, and what does “free” mean?
+
+Cloud Run is a practical fit for a small Spring Boot API: it accepts containers and automatically scales instances with incoming traffic. Google provides a monthly free usage allowance, but this is not a promise that every deployment stays free. A billing account is required, and usage beyond the allowance can be charged. Check the [current Cloud Run pricing](https://cloud.google.com/run/pricing) and set a budget alert before relying on it.
+
+For users in India, `asia-south1` (Mumbai) is available as a region. The free configuration can scale down to zero, so the first request after inactivity may take longer while the app starts. Keeping an instance warm can reduce that delay but may incur a charge. [Cloud Run regions](https://cloud.google.com/run/docs/locations)
+
+This application currently keeps books in memory. The workflow caps it at one instance so concurrent instances do not each hold a different copy of the book list. Data is still lost when that instance restarts or scales down. Durable storage and strong availability require a database and suitable running capacity; expect those to add cost.
+
+#### One-time setup
+
+1. Create a Google Cloud project and enable billing. Enable the Cloud Run, Cloud Build, Artifact Registry, and IAM Credentials APIs.
+2. Set up [Workload Identity Federation for GitHub Actions](https://github.com/google-github-actions/auth#setting-up-workload-identity-federation). Restrict the identity provider to this GitHub repository, and use a dedicated deploy service account. For source deployments, Google lists these roles for the deployer: `roles/run.sourceDeveloper`, `roles/serviceusage.serviceUsageConsumer`, and `roles/iam.serviceAccountUser` on the Cloud Run service identity. Grant the Cloud Build service account `roles/run.builder`. See Google's [source deployment guide](https://cloud.google.com/run/docs/deploying-source-code) for details.
+3. In GitHub, open **Settings → Secrets and variables → Actions → Variables** and create these repository variables:
+
+   | Variable | Value |
+   |---|---|
+   | `GCP_PROJECT_ID` | Your Google Cloud project ID |
+   | `GCP_REGION` | `asia-south1` for Mumbai, or another supported region |
+   | `GCP_WORKLOAD_IDENTITY_PROVIDER` | Full Workload Identity Provider resource name |
+   | `GCP_DEPLOY_SERVICE_ACCOUNT` | Deploy service account email |
+   | `CLOUD_RUN_SERVICE` | For example, `springboot2026-api` |
+
+   Workload Identity Federation gives GitHub short-lived credentials. Do not create or store a long-lived service-account key in the repository.
+4. Merge the workflow and application files to `master`, or manually run **Deploy Spring Boot API to Cloud Run** from the **Actions** tab after the variables and cloud permissions are configured. The workflow log shows the service URL. Open `/api/health` or `/api/books` on that URL to reach the API.
+
+The current workflow deploys without running tests. You can add build and test checks as a deployment gate when you are ready to make those checks part of the pipeline.
+
 ## 5. Interview coding practice
 
 Create `src/test/java/.../practice/` tests for each problem first. Implement the solution as a small pure Java method, document complexity, and include edge cases. Do not solve these with a controller or database.
