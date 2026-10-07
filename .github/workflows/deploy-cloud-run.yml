@@ -6,14 +6,50 @@ on:
     paths:
       - 'springboot2026 2/**'
       - '.github/workflows/deploy-cloud-run.yml'
+  pull_request:
+    branches: [master]
+    paths:
+      - 'springboot2026 2/**'
+      - '.github/workflows/deploy-cloud-run.yml'
   workflow_dispatch:
 
 permissions:
   contents: read
 
 jobs:
+  verify:
+    name: Verify application and container
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@v7
+
+      # Use the same Java major version as the local project and cache Gradle dependencies.
+      - name: Set up Java 21
+        uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: gradle
+          cache-dependency-path: |
+            springboot2026 2/build.gradle
+            springboot2026 2/gradle/wrapper/gradle-wrapper.properties
+
+      # Runs the existing tests and creates the executable application jar.
+      - name: Run tests and build the application
+        run: ./gradlew --no-daemon clean test bootJar
+        working-directory: springboot2026 2
+
+      # Catch Dockerfile and container packaging problems before a cloud deployment.
+      - name: Build the Docker image
+        run: docker build --tag springboot2026-api:ci .
+        working-directory: springboot2026 2
+
   deploy:
-    name: Build and deploy
+    name: Deploy to Cloud Run
+    needs: verify
+    # Pull requests must pass verification but never deploy to the cloud.
+    if: github.event_name != 'pull_request'
     runs-on: ubuntu-latest
     permissions:
       contents: read

@@ -455,7 +455,7 @@ After CRUD and tests work, implement these as focused exercises:
 
 ### Optional — Deploy the API with GitHub Actions and Google Cloud Run
 
-This repository has a Dockerfile in `springboot2026 2/` and a workflow at `.github/workflows/deploy-cloud-run.yml`. The workflow deploys changes from the `master` branch to Cloud Run. You can also start it manually from GitHub's **Actions** tab. The source directory contains a Dockerfile, so Cloud Build uses it to build the Java 21 container before Cloud Run starts it.
+This repository has a Dockerfile in `springboot2026 2/` and a workflow at `.github/workflows/deploy-cloud-run.yml`. For pull requests to `master` and relevant pushes, GitHub Actions first runs the Gradle tests/build and builds the Docker image. A push to `master` deploys to Cloud Run only after those checks pass. Pull requests only run the checks; they do not deploy. You can also start the workflow manually from GitHub's **Actions** tab. Cloud Build uses the source directory's Dockerfile to build the Java 21 container before Cloud Run starts it.
 
 #### Why Cloud Run, and what does “free” mean?
 
@@ -482,7 +482,7 @@ This application currently keeps books in memory. The workflow caps it at one in
    Workload Identity Federation gives GitHub short-lived credentials. Do not create or store a long-lived service-account key in the repository.
 4. Merge the workflow and application files to `master`, or manually run **Deploy Spring Boot API to Cloud Run** from the **Actions** tab after the variables and cloud permissions are configured. The workflow log shows the service URL. Open `/api/health` or `/api/books` on that URL to reach the API.
 
-The current workflow deploys without running tests. You can add build and test checks as a deployment gate when you are ready to make those checks part of the pipeline.
+The current automated test suite contains a Spring application context-load test. The workflow runs that test and builds the executable jar, then builds the Docker image. Add focused service and API tests as those behaviors are implemented; the existing workflow will run them automatically.
 
 ## 5. Interview coding practice
 
