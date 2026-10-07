@@ -112,16 +112,60 @@ Use a small **Book Catalog API** as the running example. Implement one step at a
 
 ### Step 1 — Java fundamentals before Spring
 
-Create a plain Java package such as `com.revision.springboot2026.practice` and implement small methods before wiring them into HTTP endpoints. Revisit:
+Start in `springboot2026 2/src/main/java/com/revision/springboot2026/practice/PracticeDemo.java`. Run its `main` method from IntelliJ. These examples use plain Java; you do not need to understand Spring annotations to read them.
 
-- Classes, records, interfaces, enums, access modifiers, constructors, and immutability.
-- Collections: `List`, `Set`, `Map`, `Queue`; choosing a collection for the operation and constraints.
-- `equals`/`hashCode`, `Comparable`/`Comparator`, generics, and defensive copies.
-- Exceptions, `Optional`, streams, lambdas, and method references.
-- `java.time` (`Instant`, `LocalDate`, `Duration`) rather than legacy date APIs.
-- Big-O time and space analysis for each coding exercise.
+This project is configured for Java 21, so the examples stick to Java 21 features (including records). Java 25 is the current LTS release as of this writing, but changing the project's Java version is not needed for this lesson. Always check the project's toolchain before copying a newer API into it.
 
-Use a record for immutable request/response data where appropriate, but keep JPA entities as ordinary classes unless you have deliberately checked the persistence provider's requirements.
+#### How to read a Java line
+
+For example, `Book firstBook = new Book(...)` says: make a variable named `firstBook`, whose type is `Book`, and assign it a newly created `Book` object. `catalog.add(firstBook)` calls the `add` method on the object stored in `catalog`, passing that book as input. The dot means “look at a member of this object or type.” Parentheses call a method; the values inside are its inputs.
+
+When you see a method you do not know, find it instead of guessing:
+
+1. In IntelliJ, put the caret on the method name and press **Ctrl+B** (macOS: **Cmd+B**) to jump to its declaration. **Ctrl+Q** (macOS: **F1**, depending on keymap) shows quick documentation. Autocomplete after typing `object.` also lists methods that are valid for that object's type.
+2. For Java library methods such as `Map.putIfAbsent`, `List.copyOf`, or `Optional.map`, open the JDK API docs for the version in this project: [Java 21 API documentation](https://docs.oracle.com/en/java/javase/21/docs/api/). Search the type (`Map`, `List`, `Optional`), then find the method and read its return value and notes.
+3. For an unfamiliar method, ask: What object owns it? What inputs does it take? What does it return? Can it change data or throw an exception? What is its cost?
+4. Use IDE completion and docs as a lookup aid, not a reason to memorize every method. Practice a small example and inspect the result.
+
+#### What the practice code teaches
+
+- `Book` is a **class**. A constructor (`new Book(...)`) creates it and checks the input. `private` means code outside the class cannot access that field directly; public methods provide controlled access. `final` fields cannot be reassigned after construction. Together with no setters, this makes this example's `Book` immutable.
+- `BookRequest` is a **record**, a concise data carrier. Java creates the constructor, accessors like `title()`, and value methods. Its compact constructor validates the values. Records are shallowly immutable: if a record field refers to a mutable list, the list can still change unless copied.
+- `Identifiable` is an **interface**, a small promise that a type can provide an ID. `BookCategory` is an **enum**, a fixed set of choices. `@Override` on a method is a standard Java annotation asking the compiler to check that the method really overrides a parent/interface method.
+- `List` stores an ordered sequence and may contain duplicates. `Set` stores distinct values, using `equals` and `hashCode` to decide whether values are duplicates. `Map` looks up values by key; here a book ID finds a book. `Queue` represents items waiting their turn; this example processes them first-in, first-out.
+- `equals` defines logical equality. `hashCode` must return the same value for objects that are equal, so hash collections can find them. `Comparable` gives `Book` one natural order (year, then title). `Comparator` lets one operation choose a different order (title only).
+- `<T extends Identifiable>` is a generic type parameter: this method works with any type that provides `id()`, and Java remembers the actual type so callers do not need a cast. `List.copyOf` and `Map.copyOf` make unmodifiable copies of containers; they do not make mutable objects inside the container immutable.
+- `Optional<Book>` means a lookup may produce a book or no book. `isEmpty()` checks absence, `get()` retrieves a present value, `map(...)` transforms it, and `orElse(...)` supplies a fallback. `BookNotFoundException` is a specific failure for the “required book missing” case; `IllegalArgumentException` indicates invalid input.
+- A **lambda**, `book -> book.category() == BookCategory.JAVA`, is a small rule supplied to a method. `Predicate<Book>` is the type of a rule that accepts a book and answers true/false. `Book::title` is a **method reference**, shorthand for calling `title()` on a book. A loop is used for filtering here so the execution is visible; the equivalent stream is `books.stream().filter(rule).toList()`.
+- `LocalDate` is a calendar date; `Instant` is a point on the UTC timeline; `Duration` is an elapsed amount of time. For a real local appointment that needs a timezone, learn `ZonedDateTime` too.
+
+#### Complexity practice
+
+Let `n` mean the number of books and `k` the number that match a filter. `HashMap` lookup/insertion is expected O(1), with O(n) storage. Filtering checks each item: O(n) time and O(k) output space. Sorting is O(n log n) time. These are growth estimates, not exact runtime promises. For each method, trace a small input and say its time and extra space out loud.
+
+#### The bridge to Spring
+
+Keep `BookCatalog` plain for now. Later, Spring can create a service object and supply its dependencies; a repository can replace the in-memory map; a controller can translate HTTP into a call to the service. A request record is a useful DTO (data transfer object). A JPA entity is a persistence object and should normally be an ordinary class, because persistence providers may need a no-argument constructor, proxies, and mutable state. Check the JPA provider's requirements before choosing a different shape.
+
+#### Spring annotations in beginner language
+
+An annotation is metadata written with `@Name`. It is not a Java keyword and does not usually execute the method by itself. Spring reads annotations while starting the application or handling a request, then follows their instructions. Learn the Java class and method first; then ask what Spring is being told to do.
+
+| Annotation | Plain-language meaning |
+|---|---|
+| `@SpringBootApplication` | Marks the starting application class. It enables Spring Boot setup and scans this package and its subpackages for Spring-managed classes. |
+| `@RestController` | Marks a class whose methods handle web requests and whose return values are written as response data, often JSON. |
+| `@RequestMapping("/api/books")` | Gives a controller a shared URL path prefix. |
+| `@GetMapping` / `@PostMapping` | Connects a method to an HTTP GET / POST request. The mapping annotation routes a request to the method. |
+| `@Component` | General marker for a class Spring should create and manage when it does not have a more specific role. |
+| `@Service` | Marks a class that holds application/business work so Spring can create and share it. |
+| `@Repository` | Marks a data-access class; Spring can also translate certain persistence errors. Spring Data repository interfaces often need no handwritten implementation. |
+| `@Valid` | Asks validation to check the incoming request object against its constraints. |
+| `@Entity`, `@Id`, `@GeneratedValue` | These are JPA annotations (persistence metadata), not Spring MVC annotations. They describe a database-mapped class and its identifier. |
+
+Example: in `@GetMapping("/{id}")`, `@GetMapping` tells Spring which request reaches the method; `"/{id}"` is the variable part of the URL. A method parameter annotated `@PathVariable long id` receives that URL value. You can learn these one at a time when reaching Step 2; do not try to memorize every annotation now.
+
+When Spring sees `@Service`, it creates an object (often called a **bean**) and keeps it in the **application context**, Spring's object registry. If a service constructor needs a repository, Spring looks for a matching bean and passes it in. This is **dependency injection**. Constructor injection means the dependency is visible in the constructor and the object cannot be created without it. In current Spring, a class with one constructor usually does not need `@Autowired` on that constructor.
 
 ### Step 2 — First endpoint and dependency injection
 
@@ -194,6 +238,48 @@ The constructor says, “a `HealthController` needs a `HealthService` to be crea
 3. Explain this flow in your own words: request → controller → service → controller response.
 
 This endpoint returns a fixed status, so it demonstrates routing and dependency injection but does not check whether a database or another dependency is actually healthy. A real health check can be added later.
+The first working endpoint and a tiny service are now in `springboot2026 2/src/main/java/com/revision/springboot2026/`. Read `controller/HealthController.java` first, then `service/HealthService.java`.
+
+#### Run the web application
+
+In IntelliJ, run `Springboot2026Application.main()`, not `PracticeDemo.main()`. Wait for the log message that says the application started. Then open this URL in a browser:
+
+```text
+http://localhost:8080/api/health
+```
+
+Or use a terminal:
+
+```bash
+curl -i http://localhost:8080/api/health
+```
+
+You should receive HTTP `200` and JSON similar to `{"status":"UP"}`. `-i` asks curl to show the HTTP status and headers as well as the response body. To stop the server, click the red stop button in IntelliJ.
+
+#### Read the endpoint from the outside in
+
+1. A browser or curl sends an HTTP **GET request** to `/api/health` on port `8080`.
+2. `@RequestMapping("/api/health")` gives this controller its URL prefix. `@GetMapping` says the `health()` method handles a GET request at that prefix.
+3. Spring calls `health()`. The method asks `healthService.currentStatus()` for the status and builds a map with `Map.of("status", ...)`.
+4. Because this class is a `@RestController`, Spring writes the returned map into the HTTP response as JSON. The caller sees the JSON, not a Java `Map` object.
+
+Read the Java syntax separately from the annotations: `private final HealthService healthService` is a field that stores another object; `this.healthService = healthService` saves the constructor input into that field; `healthService.currentStatus()` calls a method on that object.
+
+#### How Spring finds and connects the classes
+
+- `Springboot2026Application` has `@SpringBootApplication` and sits in `com.revision.springboot2026`. Spring Boot starts there and scans that package and its subpackages, including `controller` and `service`, for managed classes.
+- A **bean** is an object Spring creates and manages. The **application context** is Spring's registry of these objects and their relationships.
+- `@RestController` tells Spring this class handles web requests and writes method return values into responses. `@Service` tells Spring to create/manage the service object that contains application logic.
+- Spring sees that `HealthController`'s constructor needs a `HealthService`. Since `HealthService` is a bean, Spring creates it and passes it to the controller constructor. This is **constructor injection**. The controller does not call `new HealthService()` itself; Spring supplies the dependency.
+- In this example `@Repository` is not needed because there is no database access. Add it when creating a handwritten data-access class. A Spring Data interface such as `JpaRepository` is already recognized by Spring Data. `@Component` is the general marker for a Spring-managed class; `@Service` and `@Repository` are more specific role markers. Choose the role that describes the class instead of adding annotations everywhere.
+
+#### Try these small experiments
+
+1. Change `"UP"` in `HealthService.currentStatus()` to `"LEARNING"`, restart the app, and refresh the endpoint. Notice that the controller code did not need to change.
+2. Temporarily change the path in `@RequestMapping` and request both the old and new URL. Only the new path should match.
+3. In your own words, describe the flow: request → controller → service → controller response. This is the basic direction of a Spring web request.
+
+The response in this example is static, so it only proves the app can receive a request and return data. A real health check might inspect dependencies such as a database; that is a later topic.
 
 ### Step 3 — Add a resource and CRUD REST API
 
