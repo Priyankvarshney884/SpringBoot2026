@@ -1,0 +1,49 @@
+name: Deploy Spring Boot API to Cloud Run
+
+on:
+  push:
+    branches: [master]
+    paths:
+      - 'springboot2026 2/**'
+      - '.github/workflows/deploy-cloud-run.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    name: Build and deploy
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@v7
+
+      # GitHub gets short-lived Google credentials through Workload Identity Federation.
+      # Configure these repository variables in GitHub before running this workflow.
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v3
+        with:
+          workload_identity_provider: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ vars.GCP_DEPLOY_SERVICE_ACCOUNT }}
+
+      - name: Install Google Cloud CLI
+        uses: google-github-actions/setup-gcloud@v3
+
+      # Cloud Build builds the Dockerfile in the application folder; Cloud Run serves it.
+      - name: Deploy to Cloud Run
+        run: >-
+          gcloud run deploy "${{ vars.CLOUD_RUN_SERVICE }}"
+          --source "./springboot2026 2"
+          --project "${{ vars.GCP_PROJECT_ID }}"
+          --region "${{ vars.GCP_REGION }}"
+          --allow-unauthenticated
+          --port 8080
+          --memory 1Gi
+          --cpu 1
+          --min 0
+          --max 1
+          --quiet
