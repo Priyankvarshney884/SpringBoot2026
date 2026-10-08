@@ -12,6 +12,7 @@ This status is based on the source files and configuration in this checkout. “
 |---|---|---|
 | Step 1: Java fundamentals | ✅ Implemented | Plain-Java practice package demonstrates classes, records, interfaces, enums, collections, equality, ordering, generics, exceptions, `Optional`, lambdas, method references, `java.time`, and complexity. Dedicated tests for the exercises are absent. |
 | Step 2: Spring Core + first endpoint | ✅ POC coverage added | Health controller/service plus `/api/core-demo` demonstrate stereotypes, configuration beans, constructor injection, `@Autowired`, `@Qualifier`, `@Primary`, `BeanFactory`/`ApplicationContext`, lifecycle callbacks, singleton/prototype scopes, and component scanning. Definitions and caveats are in the Spring Core guide below. |
+| Spring Boot fundamentals from the interview prompt | ✅ POC + definitions added | Why Boot, architecture/startup flow, conditional auto-configuration, existing starters/dependency management, and embedded web server are covered. Profile-based/external configuration is Step 6; Actuator is Step 8. |
 | Step 3: REST CRUD | ✅ Implemented | Book GET/POST/PUT/DELETE routes, DTOs, controller/service/repository layers, HTTP status codes, and in-memory storage. PATCH, query parameters, pagination, sorting, and versioning are not implemented. |
 | Step 4: validation and errors | ✅ Implemented | DTO constraints, `@Valid`, centralized advice, 400/404/409/500 responses. Automated tests for these paths are absent. |
 | Step 5: JPA/Hibernate | ⬜ Not implemented | JPA/H2 dependencies exist, but there is no `@Entity`, `JpaRepository`, database configuration, transaction, relationship, or JPA test. |
@@ -20,7 +21,7 @@ This status is based on the source files and configuration in this checkout. “
 | Step 8: operations/deployment | 🟡 Partial | Dockerfile and deployment workflows/documentation exist. Actuator, structured logging/metrics, migrations, API security, caching, and production database settings are absent. |
 | Interview coding problems | 🟡 Listed, not solved | README lists DSA exercises, but the exercise implementations and focused tests are missing. |
 
-The learning prompt also asks for broad interview coverage beyond the current Book API. Still to study and code in focused labs: Spring Boot auto-configuration/startup internals; the full MVC path (filters, `DispatcherServlet`, handler mapping/adapters, interceptors); JPA/Hibernate behavior (persistence context, dirty checking, lazy/eager loading, N+1, relationships, JPQL); transaction ACID/propagation/isolation/rollback; Spring Security authentication/authorization, filter chain, password encoding, JWT, CORS/CSRF; and microservices patterns (HTTP clients, gateways, discovery, resilience, Kafka, sagas, observability). Caching/Redis, connection pools, performance, and concurrency beyond the in-memory map also remain.
+The learning prompt also asks for broad interview coverage beyond the current Book API. Still to study and code in focused labs: deeper Spring Boot condition-report/startup diagnostics; the full MVC path (filters, `DispatcherServlet`, handler mapping/adapters, interceptors); JPA/Hibernate behavior (persistence context, dirty checking, lazy/eager loading, N+1, relationships, JPQL); transaction ACID/propagation/isolation/rollback; Spring Security authentication/authorization, filter chain, password encoding, JWT, CORS/CSRF; and microservices patterns (HTTP clients, gateways, discovery, resilience, Kafka, sagas, observability). Caching/Redis, connection pools, performance, and concurrency beyond the in-memory map also remain.
 
 For the interview prompt's study priority, cover 🔴 Spring Core/DI, REST + MVC request flow, validation/errors, JPA basics, transactions, and security fundamentals first; 🟡 profiles/configuration, tests, observability, and performance next; 🟢 deeper distributed-system patterns after the foundations. Later code additions should keep using the same order: explain the problem, show the flow, implement one small example, add comments beside unfamiliar annotations, then practice interview questions.
 
@@ -352,6 +353,91 @@ The first response shows both formatter choices, the `@Bean` settings object, Be
 **30-second answer:** “Spring is a Java framework that manages application objects and common infrastructure. Its IoC container creates beans and connects their dependencies; constructor injection is the clearest way to declare those dependencies. Spring Boot builds on the framework with starters, auto-configuration, and embedded-server support. Stereotype annotations tell Spring and developers each class's role, while `@Configuration` and `@Bean` provide explicit object construction. Scopes control how bean instances are created and shared.”
 
 Common follow-ups: How does `ApplicationContext` differ from `BeanFactory`? What happens during bean initialization? Is singleton scope thread-safe? When do you use `@Bean` instead of `@Component`? How do `@Qualifier` and `@Primary` interact? Why is constructor injection preferred? Avoid saying that `@Autowired` creates the dependency by itself: Spring's container creates the bean and resolves the dependency; the annotation can identify an injection point.
+
+#### Spring Boot: requested topics and what we are implementing now
+
+Your interview prompt lists the topics below. This repo already schedules configuration/profiles for Step 6 and Actuator for Step 8, so their implementation stays in those steps. The other missing Boot foundations have definitions here and a runnable conditional auto-configuration POC now.
+
+| Topic | Status in this project |
+|---|---|
+| Why Spring Boot? | Explained below; the app demonstrates it by starting an HTTP server with minimal setup. |
+| Spring Boot architecture and startup flow | Explained below and traced from the existing `main` method. |
+| Auto-configuration | Runnable conditional POC at `/api/boot-demo`. |
+| Starters | Demonstrated by the existing Gradle dependencies. |
+| `application.properties` / `application.yml` | The project currently uses `application.properties`; format and external configuration are explained below. No YAML file is needed. |
+| Profiles, configuration management, environment variables | Reserved for Step 6; no profile/configuration POC is added here. |
+| Embedded server | Demonstrated by the running web application and Dockerfile. |
+| Spring Boot Actuator | Reserved for Step 8; dependency and endpoints are not added here. |
+| Dependency management | Demonstrated by the Gradle plugins and versionless dependencies. |
+
+##### Why Boot and its architecture
+
+Spring Framework provides the container and APIs. Before Boot, an application team had to assemble many library versions, register framework components, configure the web server, and write repetitive setup. Spring Boot provides useful defaults and conditional configuration so a typical application starts with less setup. You still own the application rules, API design, security, and operational choices. See the [Spring Boot reference guide](https://docs.spring.io/spring-boot/reference/).
+
+```text
+Gradle dependencies (starters + Boot dependency management)
+                         ↓
+main() → SpringApplication.run(...)
+                         ↓
+             Environment + ApplicationContext
+               ↙                     ↘
+ component scan              conditional auto-configuration
+               ↘                     ↙
+          bean definitions → beans are created and connected
+                         ↓
+           embedded web server listens on port 8080
+                         ↓
+           routes such as /api/books can receive requests
+```
+
+This is a learning diagram, not a strict internal call sequence. In this project, `Springboot2026Application.main()` calls `SpringApplication.run`. The web starter makes this a servlet web application, and Boot starts the embedded server so you run one Java process rather than separately installing/configuring a servlet container. The existing Dockerfile packages that executable application.
+
+##### Auto-configuration: useful defaults with conditions
+
+Auto-configuration means Boot considers configuration based on what is available. It commonly uses conditions such as “is this library on the classpath?”, “is this property enabled?”, and “has the application already supplied this bean?” It is designed to back off when an application provides its own bean for the same role. It is not magic and it does not prevent you from replacing defaults. The Boot docs explain [auto-configuration](https://docs.spring.io/spring-boot/reference/using/auto-configuration.html) and the [conditions report](https://docs.spring.io/spring-boot/reference/using/auto-configuration.html#using.auto-configuration.condition-annotations).
+
+The project POC adds `com.revision.bootpoc.autoconfigure.BootDemoAutoConfiguration`, listed in `src/main/resources/META-INF/spring/org.springframework.boot.autoconfigure.AutoConfiguration.imports`. It shows three real conditions:
+
+- `@ConditionalOnClass`: only consider the config if the servlet web class is available.
+- `@ConditionalOnProperty`: only consider it when `boot-demo.enabled=true` (the default for this demo).
+- `@ConditionalOnMissingBean`: supply a `BootDemoFeature` only if the application has not supplied one already.
+
+The auto-configuration package is intentionally outside the application's component-scan package. Boot discovers it through the imports file, matching the approach used by reusable auto-configuration modules. The demo endpoint at `/api/boot-demo` shows whether the conditional bean exists. Try the default and disabled forms:
+
+```bash
+curl -i http://localhost:8080/api/boot-demo
+cd "springboot2026 2"  # run Gradle commands from the directory that contains gradlew
+# Stop any app already using port 8080, then run:
+./gradlew bootRun --args='--boot-demo.enabled=false'
+```
+
+For diagnosis, start with `--debug` to see Boot's condition evaluation report. A custom auto-configuration is useful for a shared library; ordinary application configuration usually belongs in `@Configuration` classes and does not need an auto-configuration imports file.
+
+##### Starters, dependency management, and the embedded server
+
+A **starter** is a curated dependency bundle for a kind of application. This project's `spring-boot-starter-web` supplies the servlet web stack; `spring-boot-starter-data-jpa` supplies Spring Data JPA/Hibernate integration; and `spring-boot-starter-validation` supplies request validation. The web starter also brings a default embedded servlet server. Boot can start a self-contained web server; see the [web application reference](https://docs.spring.io/spring-boot/reference/web/).
+
+The Gradle file applies the Spring Boot plugin and `io.spring.dependency-management`. The application dependencies do not specify versions individually because Boot's dependency management supplies a tested set. The Boot plugin version is still explicit (`4.1.1`) because it selects the Boot release. A starter does not itself make code secure or create database tables; it provides compatible libraries and defaults.
+
+##### Properties, YAML, profiles, environment, and Actuator: scheduled topics
+
+`application.properties` is a `key=value` configuration file; this repo's file currently sets only `spring.application.name`. `application.yml`/`application.yaml` can express the same settings as indented structured data. Pick one format for an application rather than maintaining both. The project uses `.properties`.
+
+Profiles select environment-specific configuration (for example `dev` vs `prod`). Externalized configuration lets the same packaged code receive settings from files, environment variables, system properties, or command-line arguments, with defined precedence. Group related application settings with `@ConfigurationProperties` and keep credentials out of source control. These implementations are in Step 6, so this step does not add profile files or bind a settings object. See the official [externalized configuration guide](https://docs.spring.io/spring-boot/reference/features/external-config.html).
+
+Actuator adds operational endpoints such as health and info. It is explicitly scheduled for Step 8, so this step does not add its dependency or expose endpoints. When implemented, expose only the endpoints needed and secure management information; see [Actuator endpoints](https://docs.spring.io/spring-boot/reference/actuator/endpoints.html).
+
+##### Spring Boot startup flow
+
+1. The JVM enters `Springboot2026Application.main()`.
+2. `SpringApplication.run(...)` prepares the environment and chooses the application context type.
+3. Boot reads configuration sources and registers application configuration, auto-configuration candidates, and scanned components.
+4. The context evaluates conditions, creates eligible beans, injects constructor dependencies, and runs initialization callbacks.
+5. For this web app, the embedded server starts and registers MVC routes.
+6. Startup completes; the health, books, and demo routes can receive requests.
+7. On shutdown, Spring closes the context and runs managed bean destruction callbacks.
+
+This omits listeners and other extension hooks. The startup logs are the practical signal: a `Started Springboot2026Application` message means startup completed. The [SpringApplication reference](https://docs.spring.io/spring-boot/reference/features/spring-application.html) describes the lifecycle and startup events.
 
 ### Step 3 — Add a resource and CRUD REST API
 
