@@ -15,13 +15,14 @@ This status is based on the source files and configuration in this checkout. “
 | Spring Boot fundamentals from the interview prompt | ✅ POC + definitions added | Why Boot, architecture/startup flow, conditional auto-configuration, existing starters/dependency management, and embedded web server are covered. Profile-based/external configuration is Step 6; Actuator is Step 8. |
 | Step 3: REST API | ✅ Implemented with planned deferrals | GET/POST/PUT/PATCH/DELETE, query-parameter search, path variables, request bodies, DTO mapping, and status codes are in the Book API. Pagination/sorting are Step 5; API versioning is Step 8. |
 | Step 4: validation and errors | ✅ Implemented | Create/replace/patch DTO constraints, `@Valid`, centralized advice, 400/404/409/500 responses. Automated tests for these paths are absent. |
+| Spring MVC request lifecycle | ✅ POC + definitions added | DispatcherServlet flow, handler mapping/adaptation, a servlet filter, an MVC interceptor, controller advice, exception handlers, and validation are covered below. |
 | Step 5: JPA/Hibernate | ⬜ Not implemented | JPA/H2 dependencies exist, but there is no `@Entity`, `JpaRepository`, database configuration, transaction, relationship, or JPA test. |
 | Step 6: profiles/configuration | ⬜ Not implemented | Only `application.properties` with the application name exists; no profiles or `@ConfigurationProperties`. |
 | Step 7: automated tests | 🟡 Minimal | One Spring context-load test exists. Service unit, MVC, repository, and full API integration tests are missing. |
 | Step 8: operations/deployment | 🟡 Partial | Dockerfile and deployment workflows/documentation exist. Actuator, structured logging/metrics, migrations, API security, caching, and production database settings are absent. |
 | Interview coding problems | 🟡 Listed, not solved | README lists DSA exercises, but the exercise implementations and focused tests are missing. |
 
-The learning prompt also asks for broad interview coverage beyond the current Book API. Still to study and code in focused labs: deeper Spring Boot condition-report/startup diagnostics; the full MVC path (filters, `DispatcherServlet`, handler mapping/adapters, interceptors); JPA/Hibernate behavior (persistence context, dirty checking, lazy/eager loading, N+1, relationships, JPQL); transaction ACID/propagation/isolation/rollback; Spring Security authentication/authorization, filter chain, password encoding, JWT, CORS/CSRF; and microservices patterns (HTTP clients, gateways, discovery, resilience, Kafka, sagas, observability). Caching/Redis, connection pools, performance, and concurrency beyond the in-memory map also remain.
+The learning prompt also asks for broad interview coverage beyond the current Book API. Still to study and code in focused labs: deeper Spring Boot condition-report/startup diagnostics; JPA/Hibernate behavior (persistence context, dirty checking, lazy/eager loading, N+1, relationships, JPQL); transaction ACID/propagation/isolation/rollback; Spring Security authentication/authorization, security filter chain, password encoding, JWT, CORS/CSRF; and microservices patterns (HTTP clients, gateways, discovery, resilience, Kafka, sagas, observability). Caching/Redis, connection pools, performance, and concurrency beyond the in-memory map also remain.
 
 For the interview prompt's study priority, cover 🔴 Spring Core/DI, REST + MVC request flow, validation/errors, JPA basics, transactions, and security fundamentals first; 🟡 profiles/configuration, tests, observability, and performance next; 🟢 deeper distributed-system patterns after the foundations. Later code additions should keep using the same order: explain the problem, show the flow, implement one small example, add comments beside unfamiliar annotations, then practice interview questions.
 
@@ -618,6 +619,69 @@ com.revision.springboot2026
 ├── exception/        # domain errors and HTTP error mapping
 └── config/           # explicit application configuration
 ```
+
+### Prompt Topic 4 — Spring MVC request lifecycle and extension points
+
+Spring MVC is the part of Spring that receives servlet requests, selects a controller method, converts request data, and writes the HTTP response. Spring Boot configures most of this plumbing for the application.
+
+#### Follow one request through Spring MVC
+
+```text
+Browser / curl
+    ↓
+Servlet Filter chain                 RequestTimingFilter
+    ↓
+DispatcherServlet                    Spring MVC front door
+    ↓
+HandlerMapping                       Finds the matching controller method
+    ↓
+HandlerInterceptor                  RequestLifecycleInterceptor.preHandle
+    ↓
+HandlerAdapter                       Knows how to call that kind of handler
+    ↓
+BookController → BookService → Repository
+    ↓
+Return value / exception
+    ↓
+HandlerAdapter + message converter   Java response DTO becomes JSON
+    ↓
+Interceptor completion → Filter completion → HTTP response
+```
+
+The names describe distinct jobs:
+
+| Spring MVC term | What it does in plain words |
+|---|---|
+| `DispatcherServlet` | The central servlet, often called the front controller. It receives web requests and coordinates Spring MVC; you normally do not write it yourself. |
+| Controller | Your application code that handles a selected route. `@RestController` means its return values are response data (usually JSON); `@Controller` is commonly used when returning a view name. |
+| `HandlerMapping` | Finds which handler matches the request method and path, such as `GET /api/books/7` mapping to `BookController.findById`. |
+| `HandlerAdapter` | Invokes the selected handler using the right rules, including argument binding and return-value handling. It lets the dispatcher work with different handler styles. |
+| Request lifecycle | The sequence from the incoming servlet request, through mapping and controller work, to conversion and the outgoing response. |
+| Filter | Servlet-level code that runs around the MVC servlet. `RequestTimingFilter` logs method, path, status, and elapsed time. Filters can also be used for cross-cutting servlet concerns such as request wrapping. |
+| Interceptor | Spring MVC code that runs around a mapped handler. `RequestLifecycleInterceptor` sees the selected method and adds a demo response header. |
+| `@ControllerAdvice` | Lets exception handling and other controller-wide behavior live outside individual controllers. `@RestControllerAdvice` is the response-body form used for REST APIs. |
+| `@ExceptionHandler` | Marks a method to handle a given exception type, such as turning `BookNotFoundException` into HTTP 404. |
+| Validation | Checks request data at the boundary. `@Valid` triggers Jakarta constraints on the DTO before the controller method body runs. |
+
+#### Filter and interceptor: where each one runs
+
+Both can run before controller code, but they belong to different layers. A servlet Filter is called by the servlet container and can run before `DispatcherServlet`; it does not need to know which controller will handle the URL. An MVC interceptor is called inside Spring MVC after a handler has been mapped, so it can inspect that handler. Use filters for servlet-wide concerns and interceptors for MVC handler concerns. Spring Security has its own filter chain; the timing filter here is only a teaching example and does not implement authentication or security.
+
+The POC is in `web/RequestTimingFilter.java`, `web/RequestLifecycleInterceptor.java`, and `config/WebMvcConfiguration.java`. `@Component` makes the filter/interceptor beans available to Spring. `WebMvcConfigurer` registers the interceptor for `/api/**` while preserving Spring Boot's MVC setup; avoid `@EnableWebMvc` in this simple Boot customization because it takes over more MVC configuration.
+
+Run the app and request an API route:
+
+```bash
+curl -i http://localhost:8080/api/books
+```
+
+Look for `X-Mvc-Handler: BookController#findAll` in the response headers. The application log includes one timing line from the filter. These demonstrate different points in the request path: the interceptor can name the selected handler, while the filter wraps the servlet request/response work.
+
+#### Controller advice and validation in the request path
+
+For a create request, Spring's message converter reads JSON into `BookRequest`, then `@Valid` checks its constraints. Only valid input reaches `BookController.create`. If validation fails, MVC raises `MethodArgumentNotValidException`; `ApiExceptionHandler` uses `@RestControllerAdvice` and `@ExceptionHandler` to produce the API's 400 response. A service exception follows the same centralized route: for example, `BookNotFoundException` becomes a 404. The exception handler stays separate from the service, so business code does not need to know HTTP status codes.
+
+`@ControllerAdvice` can also apply to ordinary MVC controllers that return views. `@RestControllerAdvice` adds response-body behavior, which is why it suits this JSON API. A method-local `@ExceptionHandler` handles errors for one controller; placing it in advice shares the behavior across controllers.
 
 ### Step 4 — Validation and predictable errors
 
