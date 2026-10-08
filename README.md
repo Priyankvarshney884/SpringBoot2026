@@ -2,7 +2,27 @@
 
 A hands-on scratch project for revising Java, Spring Boot, REST APIs, persistence, testing, and common backend interview coding exercises. Build the project in IntelliJ IDEA and work through the topics in small, runnable steps.
 
-> This repository is a learning guide. Create the application source files by following the steps below; the README itself is not a generated Spring project.
+> This repository contains runnable learning code for the completed steps and a README that tracks the next topics. The README itself is a guide, not a generated Spring project.
+
+## Repository learning progress
+
+This status is based on the source files and configuration in this checkout. “Implemented” means there is code to read or run; a topic mentioned in a README is not counted as implemented code.
+
+| Area | Status | What is present / what is still missing |
+|---|---|---|
+| Step 1: Java fundamentals | ✅ Implemented | Plain-Java practice package demonstrates classes, records, interfaces, enums, collections, equality, ordering, generics, exceptions, `Optional`, lambdas, method references, `java.time`, and complexity. Dedicated tests for the exercises are absent. |
+| Step 2: Spring Core + first endpoint | ✅ POC coverage added | Health controller/service plus `/api/core-demo` demonstrate stereotypes, configuration beans, constructor injection, `@Autowired`, `@Qualifier`, `@Primary`, `BeanFactory`/`ApplicationContext`, lifecycle callbacks, singleton/prototype scopes, and component scanning. Definitions and caveats are in the Spring Core guide below. |
+| Step 3: REST CRUD | ✅ Implemented | Book GET/POST/PUT/DELETE routes, DTOs, controller/service/repository layers, HTTP status codes, and in-memory storage. PATCH, query parameters, pagination, sorting, and versioning are not implemented. |
+| Step 4: validation and errors | ✅ Implemented | DTO constraints, `@Valid`, centralized advice, 400/404/409/500 responses. Automated tests for these paths are absent. |
+| Step 5: JPA/Hibernate | ⬜ Not implemented | JPA/H2 dependencies exist, but there is no `@Entity`, `JpaRepository`, database configuration, transaction, relationship, or JPA test. |
+| Step 6: profiles/configuration | ⬜ Not implemented | Only `application.properties` with the application name exists; no profiles or `@ConfigurationProperties`. |
+| Step 7: automated tests | 🟡 Minimal | One Spring context-load test exists. Service unit, MVC, repository, and full API integration tests are missing. |
+| Step 8: operations/deployment | 🟡 Partial | Dockerfile and deployment workflows/documentation exist. Actuator, structured logging/metrics, migrations, API security, caching, and production database settings are absent. |
+| Interview coding problems | 🟡 Listed, not solved | README lists DSA exercises, but the exercise implementations and focused tests are missing. |
+
+The learning prompt also asks for broad interview coverage beyond the current Book API. Still to study and code in focused labs: Spring Boot auto-configuration/startup internals; the full MVC path (filters, `DispatcherServlet`, handler mapping/adapters, interceptors); JPA/Hibernate behavior (persistence context, dirty checking, lazy/eager loading, N+1, relationships, JPQL); transaction ACID/propagation/isolation/rollback; Spring Security authentication/authorization, filter chain, password encoding, JWT, CORS/CSRF; and microservices patterns (HTTP clients, gateways, discovery, resilience, Kafka, sagas, observability). Caching/Redis, connection pools, performance, and concurrency beyond the in-memory map also remain.
+
+For the interview prompt's study priority, cover 🔴 Spring Core/DI, REST + MVC request flow, validation/errors, JPA basics, transactions, and security fundamentals first; 🟡 profiles/configuration, tests, observability, and performance next; 🟢 deeper distributed-system patterns after the foundations. Later code additions should keep using the same order: explain the problem, show the flow, implement one small example, add comments beside unfamiliar annotations, then practice interview questions.
 
 ## Goals
 
@@ -104,7 +124,7 @@ These messages are normal when startup succeeds:
 - `Started Springboot2026Application` means Spring finished creating the application context.
 - `BUILD SUCCESSFUL` means Gradle completed the requested task. The configuration-cache suggestion is an optional Gradle performance feature.
 
-The generated project currently has only `spring-boot-starter`. It can start Spring, but it does not start an HTTP server or provide `/` or `/api/health`. Add the **Spring Web** dependency in IntelliJ/Initializr (or `implementation 'org.springframework.boot:spring-boot-starter-web'` in `build.gradle`) before following the REST endpoint steps below. With Spring Web added, `bootRun` normally keeps running until you stop it and serves requests on port 8080.
+This checkout already includes Spring Web, Spring Data JPA, Validation, and H2 in `springboot2026 2/build.gradle`. The health and book endpoints can start an HTTP server on port 8080. JPA and H2 are dependencies only at this stage; the book API still uses an in-memory map until Step 5.
 
 ## 4. Build the scratch application, step by step
 
@@ -238,48 +258,100 @@ The constructor says, “a `HealthController` needs a `HealthService` to be crea
 3. Explain this flow in your own words: request → controller → service → controller response.
 
 This endpoint returns a fixed status, so it demonstrates routing and dependency injection but does not check whether a database or another dependency is actually healthy. A real health check can be added later.
-The first working endpoint and a tiny service are now in `springboot2026 2/src/main/java/com/revision/springboot2026/`. Read `controller/HealthController.java` first, then `service/HealthService.java`.
+#### Spring Core: definitions and runnable POC
 
-#### Run the web application
+This section covers every topic listed under **Spring Core** in `springlearningpromt.txt`. Read the definition, then open the linked class and call the demo endpoint. Spring Framework internals are simplified here; the POC makes the relationships visible, but it does not reproduce Spring's implementation.
 
-In IntelliJ, run `Springboot2026Application.main()`, not `PracticeDemo.main()`. Wait for the log message that says the application started. Then open this URL in a browser:
+##### The foundation: Spring, IoC, and dependency injection
+
+**Spring Framework** is a Java framework that provides an object container and common application services such as web handling, transactions, and data access. **Spring Boot** builds on Spring Framework: it provides auto-configuration, starter dependencies, and embedded-server setup so an application needs less manual configuration. Boot uses Spring; it does not replace it.
+
+**Inversion of Control (IoC)** means application code does not control every object creation and connection itself. The framework takes that responsibility. **Dependency Injection (DI)** is one way Spring applies IoC: a class declares what it needs, and Spring supplies those objects. For example, `BookController` needs `BookService`, and `BookService` needs `BookRepository`; their constructors declare those dependencies. This avoids classes constructing concrete collaborators with `new`, which would tightly couple their implementation choices.
 
 ```text
-http://localhost:8080/api/health
+Springboot2026Application.main()
+        ↓ starts
+Spring container / ApplicationContext
+        ↓ scans, creates, configures, and connects beans
+BookController → BookService → BookRepository
 ```
 
-Or use a terminal:
+##### Container, beans, and startup/lifecycle
+
+A **bean** is an object that Spring creates and manages. The **container** is the Spring machinery responsible for creating beans, injecting dependencies, applying framework callbacks, and managing their configured scope. The application's `ApplicationContext` is the main container object used by a Spring Boot app.
+
+`BeanFactory` is the basic bean lookup/container interface. `ApplicationContext` extends the BeanFactory family and adds application features such as events, message resolution, resource loading, and application lifecycle integration. A plain `BeanFactory` usually creates a bean when it is first requested; an `ApplicationContext` normally creates non-lazy singleton beans during startup/refresh. In normal Boot applications, inject `ApplicationContext` only when you truly need container operations; prefer ordinary constructor-injected collaborators for application logic. The POC assigns its `ApplicationContext` to a `BeanFactory` variable and calls `getBean` to demonstrate that relationship.
+
+For a typical singleton bean, a simplified lifecycle is:
+
+```text
+Spring creates object
+ → injects dependencies
+ → runs initialization callbacks
+ → bean is ready for use
+ → application context closes
+ → runs destruction callback (for managed singleton beans)
+```
+
+`CoreDemoConfiguration` declares `@Bean(initMethod = "initialize", destroyMethod = "cleanup")`; `CoreLifecycleProbe` logs those callbacks. Watch the application startup and shutdown logs. Behind the scenes, Spring also supports awareness callbacks and `BeanPostProcessor`s before and after initialization; common init callbacks include `@PostConstruct`, `InitializingBean`, and a configured init method. The POC uses configured init/destroy methods to keep the first example explicit. Prototype objects are a caveat: Spring creates and injects them, but generally does not manage their destruction callbacks after handing them to the caller.
+
+##### Bean scopes
+
+| Scope | Meaning | In this project |
+|---|---|---|
+| `singleton` | One shared instance per Spring application context. This is the default; it does not mean one instance for every JVM or every server. | `CoreDemoComponent` explicitly uses singleton scope; the demo looks it up twice and reports whether it is the same object. |
+| `prototype` | Spring creates a new instance each time the container is asked for one. | `PrototypeNote` uses prototype scope. `ObjectProvider.getObject()` requests two objects so the endpoint can show two IDs. |
+| `request`, `session`, `application`, `websocket` | Web-aware scopes tied to an HTTP request, session, application, or WebSocket lifecycle. | Not implemented in this core demo. Learn them when you need state tied to a web interaction; do not use them as a replacement for normal stateless services. |
+
+Injecting a prototype directly into a singleton normally gives that singleton one prototype instance at singleton creation time. `ObjectProvider` is used here because it lets the singleton ask for a fresh prototype on demand. Singleton services should normally be stateless or use thread-safe state because many requests can use the same instance concurrently.
+
+##### Component annotations and configuration
+
+| Annotation | Role | POC in this repository |
+|---|---|---|
+| `@Component` | General-purpose class discovered and managed as a bean. | `FriendlyGreetingFormatter`, `CoreDemoComponent`, and `PrototypeNote`. |
+| `@Service` | A component whose role is application/business logic. | `BookService` and `CoreDemoService`. |
+| `@Repository` | A component whose role is data access; Spring can translate certain persistence exceptions. | `InMemoryBookRepository`. |
+| `@Controller` | Spring MVC controller. A returned string normally names a view. | `TraditionalController`; `@ResponseBody` makes its returned string become response text. |
+| `@RestController` | Controller whose handler return values are response bodies; effectively combines `@Controller` and `@ResponseBody`. | `HealthController`, `BookController`, and `CoreDemoController`. |
+| `@Configuration` | Declares a Java configuration class whose methods can define beans. | `CoreDemoConfiguration`. |
+| `@Bean` | Marks a method whose returned object Spring should manage. Useful for configuring third-party classes or objects created with custom setup. | `CoreDemoConfiguration.coreDemoSettings()` and `coreLifecycleProbe()`. |
+
+`@Component` is usually chosen when no more specific role fits. `@Service` and `@Repository` communicate intent to people and framework extensions. Use `@Bean` when you need an explicit factory method; use component scanning for classes you own and can annotate. Don't create an empty configuration class just to add annotations.
+
+##### Injection and choosing among beans
+
+**Constructor injection** is the default recommendation: dependencies are listed in the constructor, can be stored in `final` fields, and are visible when reading the class. Spring sees one constructor and supplies matching beans. `@Autowired` can mark an injection point, but on a class with one constructor it is optional; the POC marks the `CoreDemoService` constructor so you can recognize it. Avoid field injection in application code because it hides required dependencies and makes plain unit construction harder.
+
+Two classes implement `GreetingFormatter`:
+
+- `FriendlyGreetingFormatter` has `@Primary`. When Spring sees a constructor needing a `GreetingFormatter` without further information, this is the preferred candidate.
+- `UppercaseGreetingFormatter` is named `uppercaseGreetingFormatter`. `@Qualifier("uppercaseGreetingFormatter")` asks for this exact candidate where that parameter is needed.
+
+Use `@Primary` for the normal default implementation and `@Qualifier` at an injection point when one particular implementation is required. A qualifier resolves which matching bean to inject; it does not create the bean.
+
+##### Component scanning and configuration classes
+
+`@SpringBootApplication` includes component scanning. Since `Springboot2026Application` is in `com.revision.springboot2026`, Spring scans this package and its subpackages, including `core`, `controller`, `service`, and `repository`. A component outside that package tree must be imported or included in an explicit scan/configuration.
+
+`@Configuration` classes are Java-based configuration. Their `@Bean` methods are registered with the context. Spring processes full `@Configuration` classes so calls between bean methods preserve container behavior; application code should obtain collaborators through injection rather than manually calling configuration methods.
+
+##### Try the POC
+
+Start `Springboot2026Application.main()` and call:
 
 ```bash
-curl -i http://localhost:8080/api/health
+curl -i http://localhost:8080/api/core-demo
+curl -i http://localhost:8080/api/core-demo/traditional-controller
 ```
 
-You should receive HTTP `200` and JSON similar to `{"status":"UP"}`. `-i` asks curl to show the HTTP status and headers as well as the response body. To stop the server, click the red stop button in IntelliJ.
+The first response shows both formatter choices, the `@Bean` settings object, BeanFactory/ApplicationContext relationship, singleton lookup result, and two prototype IDs. The second returns plain text and demonstrates `@Controller` plus `@ResponseBody`. When the app stops, look for the lifecycle cleanup log. Source is under `springboot2026 2/src/main/java/com/revision/springboot2026/core/` and the controller package.
 
-#### Read the endpoint from the outside in
+##### Interview review
 
-1. A browser or curl sends an HTTP **GET request** to `/api/health` on port `8080`.
-2. `@RequestMapping("/api/health")` gives this controller its URL prefix. `@GetMapping` says the `health()` method handles a GET request at that prefix.
-3. Spring calls `health()`. The method asks `healthService.currentStatus()` for the status and builds a map with `Map.of("status", ...)`.
-4. Because this class is a `@RestController`, Spring writes the returned map into the HTTP response as JSON. The caller sees the JSON, not a Java `Map` object.
+**30-second answer:** “Spring is a Java framework that manages application objects and common infrastructure. Its IoC container creates beans and connects their dependencies; constructor injection is the clearest way to declare those dependencies. Spring Boot builds on the framework with starters, auto-configuration, and embedded-server support. Stereotype annotations tell Spring and developers each class's role, while `@Configuration` and `@Bean` provide explicit object construction. Scopes control how bean instances are created and shared.”
 
-Read the Java syntax separately from the annotations: `private final HealthService healthService` is a field that stores another object; `this.healthService = healthService` saves the constructor input into that field; `healthService.currentStatus()` calls a method on that object.
-
-#### How Spring finds and connects the classes
-
-- `Springboot2026Application` has `@SpringBootApplication` and sits in `com.revision.springboot2026`. Spring Boot starts there and scans that package and its subpackages, including `controller` and `service`, for managed classes.
-- A **bean** is an object Spring creates and manages. The **application context** is Spring's registry of these objects and their relationships.
-- `@RestController` tells Spring this class handles web requests and writes method return values into responses. `@Service` tells Spring to create/manage the service object that contains application logic.
-- Spring sees that `HealthController`'s constructor needs a `HealthService`. Since `HealthService` is a bean, Spring creates it and passes it to the controller constructor. This is **constructor injection**. The controller does not call `new HealthService()` itself; Spring supplies the dependency.
-- In this example `@Repository` is not needed because there is no database access. Add it when creating a handwritten data-access class. A Spring Data interface such as `JpaRepository` is already recognized by Spring Data. `@Component` is the general marker for a Spring-managed class; `@Service` and `@Repository` are more specific role markers. Choose the role that describes the class instead of adding annotations everywhere.
-
-#### Try these small experiments
-
-1. Change `"UP"` in `HealthService.currentStatus()` to `"LEARNING"`, restart the app, and refresh the endpoint. Notice that the controller code did not need to change.
-2. Temporarily change the path in `@RequestMapping` and request both the old and new URL. Only the new path should match.
-3. In your own words, describe the flow: request → controller → service → controller response. This is the basic direction of a Spring web request.
-
-The response in this example is static, so it only proves the app can receive a request and return data. A real health check might inspect dependencies such as a database; that is a later topic.
+Common follow-ups: How does `ApplicationContext` differ from `BeanFactory`? What happens during bean initialization? Is singleton scope thread-safe? When do you use `@Bean` instead of `@Component`? How do `@Qualifier` and `@Primary` interact? Why is constructor injection preferred? Avoid saying that `@Autowired` creates the dependency by itself: Spring's container creates the bean and resolves the dependency; the annotation can identify an injection point.
 
 ### Step 3 — Add a resource and CRUD REST API
 
@@ -373,7 +445,7 @@ Try `GET /api/books/999` and `DELETE /api/books/999` too; both should return 404
 
 #### Trace POST from JSON to the response
 
-For POST, Spring reads the JSON body because of `@RequestBody` and creates `BookRequest`. The controller passes that request to `BookService.create`. The service makes a `Book` with a temporary ID of 0 and asks the repository to save it. The map implementation assigns the next ID, stores it, and returns it. The service maps the saved book into `BookResponse`. Finally, the controller returns HTTP 201 with the response body and a `Location` header. In later steps validation and consistent error responses will improve how invalid request data is handled.
+For POST, Spring reads the JSON body because of `@RequestBody` and creates `BookRequest`. `@Valid` checks its constraints before the controller runs. The controller passes the valid request to `BookService.create`. The service checks the duplicate rule, makes a `Book` with a temporary ID of 0, and asks the repository to save it. The map implementation assigns the next ID, stores it, and returns it. The service maps the saved book into `BookResponse`. Finally, the controller returns HTTP 201 with the response body and a `Location` header. Step 4 shows how validation and error responses work.
 
 #### Why use an interface for the repository?
 
@@ -396,9 +468,63 @@ com.revision.springboot2026
 
 ### Step 4 — Validation and predictable errors
 
-Create request DTOs rather than binding incoming JSON straight onto the persistence entity. Add constraints such as `@NotBlank`, `@Size`, and `@Min`, and put `@Valid` on the controller request parameter. Return useful 400 responses for invalid input and 404 for an unknown ID. Centralize mapping with `@RestControllerAdvice` and `@ExceptionHandler`; do not expose stack traces or internal exception messages to clients.
+This step is now connected end to end. Look at `dto/BookRequest.java`, `controller/BookController.java`, `service/BookService.java`, and the three files under `exception/`.
 
-Practice checking that malformed JSON, invalid values, duplicate records, and missing records each return an intentional status code and response body.
+#### Validate the request at the HTTP boundary
+
+`BookRequest` uses Jakarta Bean Validation constraints:
+
+- `@NotBlank` rejects null, empty, or whitespace-only text.
+- `@Size(max = ...)` limits title and author lengths.
+- `@Min(0)` rejects negative publication years.
+- `@Valid` on each `@RequestBody` parameter asks Spring to check these rules before it calls the controller method.
+
+When validation fails, Spring raises `MethodArgumentNotValidException`. `ApiExceptionHandler` catches it and returns HTTP 400 with a stable JSON body containing field errors. Malformed JSON or a value that cannot be converted into the request record is handled as HTTP 400 too. Validation is kept in the request DTO so invalid client input does not reach the service.
+
+Try these requests while the app is running:
+
+```bash
+# Valid create: 201 Created
+curl -i -X POST http://localhost:8080/api/books \
+  -H 'Content-Type: application/json' \
+  -d '{"title":"Dune","author":"Frank Herbert","publicationYear":1965}'
+
+# Blank title: 400 Bad Request with a title field error
+curl -i -X POST http://localhost:8080/api/books \
+  -H 'Content-Type: application/json' \
+  -d '{"title":"  ","author":"Frank Herbert","publicationYear":1965}'
+
+# Negative year: 400 Bad Request
+curl -i -X POST http://localhost:8080/api/books \
+  -H 'Content-Type: application/json' \
+  -d '{"title":"Dune","author":"Frank Herbert","publicationYear":-1}'
+
+# Malformed JSON: 400 Bad Request
+curl -i -X POST http://localhost:8080/api/books \
+  -H 'Content-Type: application/json' \
+  -d '{"title":"Dune",'
+```
+
+#### Keep business errors separate from HTTP
+
+`BookService` throws `BookNotFoundException` when an ID does not exist and `DuplicateBookException` when the same title/author combination is submitted. The service describes what went wrong in application terms; it does not choose HTTP status codes. `ApiExceptionHandler`, marked with `@RestControllerAdvice`, handles exceptions from controllers centrally:
+
+| Failure | HTTP status | Why |
+|---|---:|---|
+| Invalid fields, malformed/missing JSON | 400 Bad Request | The request cannot be accepted as submitted. |
+| Missing book ID | 404 Not Found | The requested resource does not exist. |
+| Duplicate title and author | 409 Conflict | The request conflicts with the current catalog. |
+| Unexpected internal failure | 500 Internal Server Error | The response gives a generic message, not an exception or stack trace. |
+
+`@ExceptionHandler` selects a method for a particular exception type. More specific handlers are used for validation, not-found, and duplicate errors; the generic `Exception` handler is a final safety net. `ApiError` gives errors a consistent shape: status, short error name, safe message, and a map of field errors.
+
+This demonstrates `@ControllerAdvice`/`@RestControllerAdvice` and `@ExceptionHandler`, but the handler currently returns a small application-specific error record. Spring MVC also has built-in error handling; later you can compare it with a customized `ProblemDetail` response.
+
+#### Duplicate rule and its cost
+
+The exercise treats title and author as a duplicate pair, ignoring letter case and surrounding spaces. The service checks the current list before saving, which is O(n) for n books. That is fine for this small in-memory lesson. A real database should enforce uniqueness with a unique constraint because a read-then-write check alone can race when two requests arrive at the same time.
+
+Validation does not prove that a request is authorized, that the book is unique in a distributed system, or that a database write will succeed. Those concerns belong to later security, persistence, and transaction lessons.
 
 ### Step 5 — Add persistence with JPA and H2
 

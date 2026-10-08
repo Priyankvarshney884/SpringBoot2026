@@ -3,6 +3,7 @@ package com.revision.springboot2026.controller;
 import com.revision.springboot2026.dto.BookRequest;
 import com.revision.springboot2026.dto.BookResponse;
 import com.revision.springboot2026.service.BookService;
+import jakarta.validation.Valid;
 import java.net.URI;
 import java.util.List;
 import org.springframework.http.ResponseEntity;
@@ -36,17 +37,18 @@ public class BookController {
 
     // GET /api/books/1 returns book 1, or a 404 response if it does not exist.
     @GetMapping("/{id}")
-    public ResponseEntity<BookResponse> findById(
+    public BookResponse findById(
             // @PathVariable takes {id} from the URL and converts it from text to long.
             @PathVariable long id) {
-        return bookService.findById(id)
-                .map(ResponseEntity::ok)
-                .orElseGet(() -> ResponseEntity.notFound().build());
+        // A missing ID throws BookNotFoundException; ApiExceptionHandler maps it to HTTP 404.
+        return bookService.findById(id);
     }
 
     // POST /api/books reads JSON into BookRequest and responds with status 201 Created.
     @PostMapping
     public ResponseEntity<BookResponse> create(
+            // @Valid checks the DTO constraints before the service receives this request.
+            @Valid
             // @RequestBody asks Spring to convert the JSON body into this Java record.
             @RequestBody BookRequest request) {
         BookResponse createdBook = bookService.create(request);
@@ -56,13 +58,13 @@ public class BookController {
 
     // PUT /api/books/1 replaces all editable fields of book 1; missing IDs return 404.
     @PutMapping("/{id}")
-    public ResponseEntity<BookResponse> replace(
+    public BookResponse replace(
             // The ID comes from the URL; the new field values come from the JSON body.
             @PathVariable long id,
+            // @Valid runs the BookRequest field constraints before this method is called.
+            @Valid
             @RequestBody BookRequest request) {
-        return bookService.replace(id, request)
-                .map(ResponseEntity::ok)
-                .orElseGet(() -> ResponseEntity.notFound().build());
+        return bookService.replace(id, request);
     }
 
     // DELETE /api/books/1 returns 204 when deleted, or 404 when there was no book 1.
@@ -70,9 +72,8 @@ public class BookController {
     public ResponseEntity<Void> delete(
             // Read the ID from the final URL segment, for example /api/books/1.
             @PathVariable long id) {
-        if (!bookService.delete(id)) {
-            return ResponseEntity.notFound().build();
-        }
+        // A missing ID throws BookNotFoundException; the advice creates its 404 response.
+        bookService.delete(id);
         return ResponseEntity.noContent().build();
     }
 }
