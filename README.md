@@ -13,8 +13,8 @@ This status is based on the source files and configuration in this checkout. “
 | Step 1: Java fundamentals | ✅ Implemented | Plain-Java practice package demonstrates classes, records, interfaces, enums, collections, equality, ordering, generics, exceptions, `Optional`, lambdas, method references, `java.time`, and complexity. Dedicated tests for the exercises are absent. |
 | Step 2: Spring Core + first endpoint | ✅ POC coverage added | Health controller/service plus `/api/core-demo` demonstrate stereotypes, configuration beans, constructor injection, `@Autowired`, `@Qualifier`, `@Primary`, `BeanFactory`/`ApplicationContext`, lifecycle callbacks, singleton/prototype scopes, and component scanning. Definitions and caveats are in the Spring Core guide below. |
 | Spring Boot fundamentals from the interview prompt | ✅ POC + definitions added | Why Boot, architecture/startup flow, conditional auto-configuration, existing starters/dependency management, and embedded web server are covered. Profile-based/external configuration is Step 6; Actuator is Step 8. |
-| Step 3: REST CRUD | ✅ Implemented | Book GET/POST/PUT/DELETE routes, DTOs, controller/service/repository layers, HTTP status codes, and in-memory storage. PATCH, query parameters, pagination, sorting, and versioning are not implemented. |
-| Step 4: validation and errors | ✅ Implemented | DTO constraints, `@Valid`, centralized advice, 400/404/409/500 responses. Automated tests for these paths are absent. |
+| Step 3: REST API | ✅ Implemented with planned deferrals | GET/POST/PUT/PATCH/DELETE, query-parameter search, path variables, request bodies, DTO mapping, and status codes are in the Book API. Pagination/sorting are Step 5; API versioning is Step 8. |
+| Step 4: validation and errors | ✅ Implemented | Create/replace/patch DTO constraints, `@Valid`, centralized advice, 400/404/409/500 responses. Automated tests for these paths are absent. |
 | Step 5: JPA/Hibernate | ⬜ Not implemented | JPA/H2 dependencies exist, but there is no `@Entity`, `JpaRepository`, database configuration, transaction, relationship, or JPA test. |
 | Step 6: profiles/configuration | ⬜ Not implemented | Only `application.properties` with the application name exists; no profiles or `@ConfigurationProperties`. |
 | Step 7: automated tests | 🟡 Minimal | One Spring context-load test exists. Service unit, MVC, repository, and full API integration tests are missing. |
@@ -443,6 +443,39 @@ This omits listeners and other extension hooks. The startup logs are the practic
 
 The first CRUD version is implemented in the `domain`, `dto`, `repository`, `service`, and `controller` packages. Read the code in that order to follow one book operation from storage up to HTTP.
 
+#### REST principles and HTTP method choices
+
+REST is an architectural style for working with resources through a uniform HTTP interface. In this API, a book is a resource identified by `/api/books/{id}`; HTTP methods describe the operation, and JSON is one representation of the resource. A REST-style service is stateless between requests: each request contains what the server needs to handle it. Use meaningful resource paths, standard status codes, and cache behavior where it makes sense.
+
+| Method | This API's meaning | Safe/idempotent guidance |
+|---|---|---|
+| GET | Read books or search the catalog. | Safe (does not ask to change state) and idempotent. |
+| POST | Create a new book. | Usually not idempotent: repeating the same request can create another resource. |
+| PUT | Replace all editable fields of the book at the given ID. | Idempotent when repeating the same replacement leaves the same final state. |
+| PATCH | Change only fields supplied in the request. | Depends on the patch operation; this example sets values, so repeating the same patch is idempotent. |
+| DELETE | Remove the book at the given ID. | Intended to be idempotent in final state, even though repeated calls may return different statuses here (204 then 404). |
+
+Use PUT when the client sends the complete replacement representation. Use PATCH when it sends only fields to change. In this POC, null/omitted fields in `BookPatchRequest` mean “keep the current value”; the API does not support clearing a field to null.
+
+#### Checklist against the REST topics in `springlearningpromt.txt`
+
+| Topic | Status and POC |
+|---|---|
+| REST principles | Explained above; resource URLs and HTTP representations are used by the Book API. |
+| HTTP methods: GET, POST, PUT, PATCH, DELETE | All five are implemented on the Book API. |
+| HTTP status codes | Implemented: 200, 201, 204, 400, 404, 409, and safe 500 responses. |
+| `@RequestParam` | Implemented by `/api/books/search?title=...&author=...`. |
+| `@PathVariable` | Implemented by item routes such as `/api/books/{id}`. |
+| `@RequestBody` | Implemented for create, replace, and patch JSON DTOs. |
+| `ResponseEntity` | Used to return 201 + `Location` for create and 204 for delete; the advice uses it for error status/body pairs. |
+| DTOs; entity vs DTO | Request/response DTOs are implemented. `domain.Book` is not a persistence entity; JPA entity code is Step 5. |
+| API validation | Implemented in Step 4 for create, replace, and patch. |
+| Pagination and sorting | Defined as later work in Step 5, alongside repository queries; no in-memory fake paging API is added here. |
+| API versioning | A version changes the public API contract (often a URI prefix such as `/v1` or a header). A small POC and tradeoffs are reserved for Step 8. |
+| Exception handling and global exception handling | Implemented in Step 4 with custom application exceptions and `@RestControllerAdvice` / `@ExceptionHandler`. |
+
+Pagination returns a bounded portion of a larger result set; sorting orders that result by chosen fields. These are deferred to Step 5 so they can use Spring Data `Pageable` and database ordering instead of loading every row into memory. Versioning stays in Step 8 as already planned. For this PATCH POC, omitted or explicit `null` fields mean “unchanged”; `{}` is therefore a no-op. This is a small custom JSON contract, not a complete JSON Merge Patch implementation.
+
 #### The layers and why they are separate
 
 ```text
@@ -472,21 +505,41 @@ This separation means we can replace the map implementation with database storag
 | `@RestController` | This class handles web requests; return values are response bodies. | Routes matching requests to its methods and converts Java response data to JSON. |
 | `@RequestMapping("/api/books")` | Shared URL prefix for this controller. | Combines the prefix with each method's path. |
 | `@GetMapping` | Handle GET at `/api/books`. | Matches HTTP method and URL instead of hand-written request checks. |
+| `@GetMapping("/search")` | Handle GET at `/api/books/search`. | Maps the URL to a method without manual path comparisons. |
 | `@GetMapping("/{id}")` | Handle GET at a URL such as `/api/books/12`. | Finds the path and provides the value `12` to the method. |
 | `@PathVariable long id` | Take `id` from the variable URL segment. | Parses the text segment into a Java `long`. |
-| `@PostMapping` / `@PutMapping` / `@DeleteMapping` | Handle POST / PUT / DELETE requests at the controller path (with `/{id}` for the latter two). | Selects the method using HTTP verb and URL. |
-| `@RequestBody BookRequest request` | Read the JSON request body and make a `BookRequest` object from it. | Parses JSON and assigns its fields to the Java record. |
+| `@RequestParam(required = false)` | Read an optional query-string value such as `?author=Bloch`. | Parses query parameters and supplies null when an optional value is absent. |
+| `@PostMapping` / `@PutMapping` / `@PatchMapping` / `@DeleteMapping` | Handle POST / PUT / PATCH / DELETE requests at the controller path (with `/{id}` for item changes). | Selects the method using HTTP verb and URL. |
+| `@RequestBody BookRequest` / `BookPatchRequest` | Read JSON and create the corresponding request DTO. | Parses JSON and assigns values to the Java record. |
 
-`ResponseEntity<BookResponse>` lets a controller choose both the body and HTTP status. `ResponseEntity.ok(...)` means 200, `created(...)` means 201 and includes a `Location` header, `notFound()` means 404, and `noContent()` means 204 with no body. Returning a plain `List` or record lets Spring choose the normal 200 response and convert the body to JSON.
+`ResponseEntity<BookResponse>` lets a controller choose both the body and HTTP status. `ResponseEntity.ok(...)` means 200, `created(...)` means 201 and can include a `Location` header, and `noContent()` means 204 with no body. POST demonstrates `ResponseEntity.created(...)`; DELETE returns 204. GET/PUT/PATCH return a DTO directly and Spring normally sends 200 with a JSON body. For errors, the global advice builds a `ResponseEntity` with the appropriate status and error body.
 
-#### The five routes and expected behavior
+#### Status codes used by the API
+
+| Status | Meaning here |
+|---|---|
+| 200 OK | A read, replacement, patch, or search returned a response body. |
+| 201 Created | POST stored a new book; the response includes a `Location` header for it. |
+| 204 No Content | DELETE succeeded and has no response body. |
+| 400 Bad Request | Invalid DTO fields or malformed/unreadable JSON. |
+| 404 Not Found | A requested book ID does not exist. |
+| 409 Conflict | A title/author pair duplicates an existing book. |
+| 500 Internal Server Error | Unexpected failure; clients receive a generic safe message. |
+
+#### Domain object vs DTO
+
+`domain/Book` is the application's in-memory domain object. `BookRequest` and `BookResponse` are **DTOs** (data transfer objects) defining what clients may send and receive. Keeping these separate lets the API avoid exposing storage details and lets request and response shapes differ. This `Book` is not a JPA entity yet; Step 5 introduces an entity. An entity models persistence state and has provider requirements, while a DTO models an API contract. Avoid returning a JPA entity directly from a controller.
+
+#### Routes and expected behavior
 
 | Method | Path | Behavior |
 |---|---|---|
 | `GET` | `/api/books` | List books |
+| `GET` | `/api/books/search?author=Bloch&title=Java` | Search using optional query parameters |
 | `GET` | `/api/books/{id}` | Fetch one book or return 404 |
 | `POST` | `/api/books` | Create a book and return 201 |
 | `PUT` | `/api/books/{id}` | Replace all book fields or return 404 when the ID is missing |
+| `PATCH` | `/api/books/{id}` | Update only supplied fields or return 404 when the ID is missing |
 | `DELETE` | `/api/books/{id}` | Delete the book and return 204, or 404 when the ID is missing |
 
 #### Try the endpoints
@@ -513,6 +566,12 @@ Fetch the created book (assuming the returned ID was `1`):
 curl -i http://localhost:8080/api/books/1
 ```
 
+Search by optional query parameters. You can supply title, author, both, or neither:
+
+```bash
+curl -i 'http://localhost:8080/api/books/search?author=Bloch&title=Effective'
+```
+
 Replace all editable book fields. PUT is a full replacement in this exercise, so send every field:
 
 ```bash
@@ -521,13 +580,21 @@ curl -i -X PUT http://localhost:8080/api/books/1 \
   -d '{"title":"Effective Java, Third Edition","author":"Joshua Bloch","publicationYear":2018}'
 ```
 
+Patch only the title. Fields omitted from this JSON remain unchanged:
+
+```bash
+curl -i -X PATCH http://localhost:8080/api/books/1 \
+  -H 'Content-Type: application/json' \
+  -d '{"title":"Effective Java: Updated Title"}'
+```
+
 Delete it. A successful delete has status 204 and an empty response body:
 
 ```bash
 curl -i -X DELETE http://localhost:8080/api/books/1
 ```
 
-Try `GET /api/books/999` and `DELETE /api/books/999` too; both should return 404. Stop the app with IntelliJ's stop button when finished.
+Try `GET /api/books/999`, `PATCH /api/books/999`, and `DELETE /api/books/999` too; each should return 404. Stop the app with IntelliJ's stop button when finished.
 
 #### Trace POST from JSON to the response
 
@@ -554,7 +621,7 @@ com.revision.springboot2026
 
 ### Step 4 — Validation and predictable errors
 
-This step is now connected end to end. Look at `dto/BookRequest.java`, `controller/BookController.java`, `service/BookService.java`, and the three files under `exception/`.
+This step is now connected end to end. Look at `dto/BookRequest.java` and `dto/BookPatchRequest.java`, `controller/BookController.java`, `service/BookService.java`, and the three files under `exception/`.
 
 #### Validate the request at the HTTP boundary
 
@@ -563,7 +630,7 @@ This step is now connected end to end. Look at `dto/BookRequest.java`, `controll
 - `@NotBlank` rejects null, empty, or whitespace-only text.
 - `@Size(max = ...)` limits title and author lengths.
 - `@Min(0)` rejects negative publication years.
-- `@Valid` on each `@RequestBody` parameter asks Spring to check these rules before it calls the controller method.
+- `@Valid` on each `@RequestBody` parameter asks Spring to check these rules before it calls the controller method. The patch DTO allows omitted fields but validates any value that is supplied.
 
 When validation fails, Spring raises `MethodArgumentNotValidException`. `ApiExceptionHandler` catches it and returns HTTP 400 with a stable JSON body containing field errors. Malformed JSON or a value that cannot be converted into the request record is handled as HTTP 400 too. Validation is kept in the request DTO so invalid client input does not reach the service.
 
@@ -661,7 +728,7 @@ After CRUD and tests work, implement these as focused exercises:
 - Spring Boot Actuator health/info endpoints and deliberate exposure configuration.
 - Database migration with Flyway or Liquibase.
 - Spring Security: secure one route, understand authentication vs authorization, then implement a small role-based rule. Treat JWT as a protocol and key-management topic, not merely a token-generation exercise.
-- Pagination, filtering, sorting, and API versioning tradeoffs.
+- Pagination, filtering, and sorting with JPA, plus a small API versioning POC and its tradeoffs.
 - A Dockerfile and compose-based local database if containers are part of your workflow.
 - Concurrency and transaction behavior: isolation, lost updates, optimistic locking, and idempotency.
 

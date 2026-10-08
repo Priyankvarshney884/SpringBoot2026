@@ -1,5 +1,6 @@
 package com.revision.springboot2026.controller;
 
+import com.revision.springboot2026.dto.BookPatchRequest;
 import com.revision.springboot2026.dto.BookRequest;
 import com.revision.springboot2026.dto.BookResponse;
 import com.revision.springboot2026.service.BookService;
@@ -10,10 +11,12 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 /** HTTP endpoints for creating, reading, replacing, and deleting books. */
@@ -33,6 +36,17 @@ public class BookController {
     @GetMapping
     public List<BookResponse> findAll() {
         return bookService.findAll();
+    }
+
+    // @RequestParam reads optional query-string filters, for example ?author=Bloch.
+    // This is a simple O(n) in-memory search; database paging and sorting come in Step 5.
+    // @GetMapping gives this search a separate route from the plain list route.
+    @GetMapping("/search")
+    public List<BookResponse> search(
+            // An absent parameter is null because required=false.
+            @RequestParam(required = false) String title,
+            @RequestParam(required = false) String author) {
+        return bookService.search(title, author);
     }
 
     // GET /api/books/1 returns book 1, or a 404 response if it does not exist.
@@ -65,6 +79,17 @@ public class BookController {
             @Valid
             @RequestBody BookRequest request) {
         return bookService.replace(id, request);
+    }
+
+    // PATCH changes only the non-null fields in the JSON body; omitted fields are kept as-is.
+    // Spring maps the PATCH HTTP method to this handler.
+    @PatchMapping("/{id}")
+    public BookResponse patch(
+            @PathVariable long id,
+            // Validate supplied fields, then convert the JSON body into BookPatchRequest.
+            @Valid
+            @RequestBody BookPatchRequest request) {
+        return bookService.patch(id, request);
     }
 
     // DELETE /api/books/1 returns 204 when deleted, or 404 when there was no book 1.

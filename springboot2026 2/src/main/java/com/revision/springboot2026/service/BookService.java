@@ -1,6 +1,7 @@
 package com.revision.springboot2026.service;
 
 import com.revision.springboot2026.domain.Book;
+import com.revision.springboot2026.dto.BookPatchRequest;
 import com.revision.springboot2026.dto.BookRequest;
 import com.revision.springboot2026.dto.BookResponse;
 import com.revision.springboot2026.exception.BookNotFoundException;
@@ -27,6 +28,20 @@ public class BookService {
                 .toList();
     }
 
+    /** Optional title/author filters; filtering the in-memory list takes O(n). */
+    public List<BookResponse> search(String title, String author) {
+        String titleFilter = normalizeFilter(title);
+        String authorFilter = normalizeFilter(author);
+
+        return bookRepository.findAll().stream()
+                .filter(book -> titleFilter.isEmpty()
+                        || normalize(book.getTitle()).contains(titleFilter))
+                .filter(book -> authorFilter.isEmpty()
+                        || normalize(book.getAuthor()).contains(authorFilter))
+                .map(this::toResponse)
+                .toList();
+    }
+
     public BookResponse findById(long id) {
         Book book = bookRepository.findById(id)
                 .orElseThrow(() -> new BookNotFoundException(id));
@@ -49,6 +64,24 @@ public class BookService {
         Book replacement = new Book(id, request.title(), request.author(), request.publicationYear());
         Book savedBook = bookRepository.save(replacement);
         return toResponse(savedBook);
+    }
+
+    public BookResponse patch(long id, BookPatchRequest patch) {
+        // PATCH needs the current values so omitted fields can be preserved.
+        Book currentBook = bookRepository.findById(id)
+                .orElseThrow(() -> new BookNotFoundException(id));
+
+        String title = patch.title() == null ? currentBook.getTitle() : patch.title();
+        String author = patch.author() == null ? currentBook.getAuthor() : patch.author();
+        int year = patch.publicationYear() == null
+                ? currentBook.getPublicationYear()
+                : patch.publicationYear();
+
+        BookRequest completeReplacement = new BookRequest(title, author, year);
+        ensureTitleAndAuthorAreUnique(completeReplacement, id);
+
+        Book replacement = new Book(id, title, author, year);
+        return toResponse(bookRepository.save(replacement));
     }
 
     public void delete(long id) {
@@ -82,5 +115,9 @@ public class BookService {
 
     private String normalize(String value) {
         return value.trim().toLowerCase(Locale.ROOT);
+    }
+
+    private String normalizeFilter(String value) {
+        return value == null ? "" : normalize(value);
     }
 }
