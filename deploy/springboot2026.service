@@ -1,0 +1,15 @@
+[Unit]
+Description=SpringBoot2026 development API
+After=network.target
+
+[Service]
+Type=simple
+User=ec2-user
+WorkingDirectory=/home/ec2-user/springboot2026
+Environment=SERVER_PORT=8080
+ExecStart=/usr/bin/java -XX:MaxRAMPercentage=75 -jar /home/ec2-user/springboot2026/app.jar
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,77 @@
+# name: Build and deploy to EC2
+
+# on:
+#   push:
+#     branches: [master]
+#     paths:
+#       - 'springboot2026 2/**'
+#       - '.github/workflows/deploy-ec2-master.yml'
+#   pull_request:
+#     branches: [master]
+#     paths:
+#       - 'springboot2026 2/**'
+#       - '.github/workflows/deploy-ec2-master.yml'
+
+# permissions:
+#   contents: read
+
+# jobs:
+#   build:
+#     name: Test and build JAR
+#     runs-on: ubuntu-latest
+#     steps:
+#       - name: Check out the repository
+#         uses: actions/checkout@v7
+
+#       - name: Set up Java 21
+#         uses: actions/setup-java@v6
+#         with:
+#           distribution: temurin
+#           java-version: '21'
+#           cache: gradle
+#           cache-dependency-path: |
+#             springboot2026 2/build.gradle
+#             springboot2026 2/gradle/wrapper/gradle-wrapper.properties
+
+#       - name: Run tests and build the executable JAR
+#         run: ./gradlew --no-daemon clean test bootJar
+#         working-directory: springboot2026 2
+
+#       - name: Upload JAR for deployment
+#         if: github.event_name == 'push' && github.ref == 'refs/heads/master'
+#         uses: actions/upload-artifact@v4
+#         with:
+#           name: application-jar
+#           path: springboot2026 2/build/libs/app.jar
+#           if-no-files-found: error
+#           retention-days: 1
+
+#   deploy:
+#     name: Deploy to development EC2
+#     needs: build
+#     if: github.event_name == 'push' && github.ref == 'refs/heads/master'
+#     # This runner lives on EC2, so GitHub does not need inbound SSH access to deploy.
+#     runs-on: [self-hosted, linux, x64, ec2-dev]
+#     steps:
+#       - name: Download the built JAR
+#         uses: actions/download-artifact@v4
+#         with:
+#           name: application-jar
+#           path: deploy-artifact
+
+#       - name: Activate release and check health
+#         run: |
+#           set -eu
+#           install -d "$HOME/springboot2026/releases"
+#           install -m 0644 deploy-artifact/app.jar "$HOME/springboot2026/releases/app-${GITHUB_SHA}.jar"
+#           ln -sfn "releases/app-${GITHUB_SHA}.jar" "$HOME/springboot2026/app.jar.next"
+#           mv -Tf "$HOME/springboot2026/app.jar.next" "$HOME/springboot2026/app.jar"
+#           sudo -n systemctl restart springboot2026
+#           for attempt in $(seq 1 30); do
+#             if curl --fail --silent http://localhost:8080/api/health; then
+#               exit 0
+#             fi
+#             sleep 2
+#           done
+#           systemctl status springboot2026 --no-pager
+#           exit 1

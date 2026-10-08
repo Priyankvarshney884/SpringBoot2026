@@ -484,6 +484,67 @@ This application currently keeps books in memory. The workflow caps it at one in
 
 The current automated test suite contains a Spring application context-load test. The workflow runs that test and builds the executable jar, then builds the Docker image. Add focused service and API tests as those behaviors are implemented; the existing workflow will run them automatically.
 
+### Deploy to the EC2 development instance from `master`
+
+The workflow at `.github/workflows/deploy-ec2-master.yml` runs tests and builds the JAR on GitHub-hosted runners for pull requests to `master`. A push to `master` deploys that JAR using a self-hosted GitHub Actions runner on the EC2 instance, restarts the `springboot2026` systemd service, and checks `/api/health`. This deployment does not require Docker or inbound SSH access from GitHub. The existing Cloud Run workflow also deploys pushes to `master`; leave it enabled only if you intend to deploy to both EC2 and Cloud Run.
+
+#### One-time EC2 setup
+
+This service file assumes the instance login is `ec2-user` and Java is at `/usr/bin/java`. Adjust `deploy/springboot2026.service` if your instance uses a different login or Java path.
+
+1. From the repository root on your Mac, copy and install the service unit (replace the address if the instance's public IP changes):
+
+   ```bash
+   scp deploy/springboot2026.service ec2-user@<EC2_PUBLIC_IP>:/tmp/springboot2026.service
+   ssh ec2-user@<EC2_PUBLIC_IP> 'sudo install -o root -g root -m 0644 /tmp/springboot2026.service /etc/systemd/system/springboot2026.service && sudo systemctl daemon-reload && sudo systemctl enable springboot2026'
+   ```
+
+2. Allow the deploy account to restart only this service without an interactive sudo prompt. On the instance, run `sudo visudo -f /etc/sudoers.d/springboot2026-deploy` and add:
+
+   ```text
+   ec2-user ALL=(root) NOPASSWD: /usr/bin/systemctl restart springboot2026
+   ```
+
+   Save, then verify the file with `sudo visudo -cf /etc/sudoers.d/springboot2026-deploy`.
+
+3. Install a self-hosted GitHub Actions runner on the instance. In the repository, open **Settings → Actions → Runners → New self-hosted runner**, choose **Linux** and **x64**, then follow GitHub's current download and configuration commands while logged in as `ec2-user`. Add the label `ec2-dev` when configuring the runner. Install and start it as a service with the `svc.sh` commands GitHub shows. Run it as `ec2-user`, never as root. Do not use this runner for pull-request jobs from untrusted contributors; this workflow uses GitHub-hosted runners for PR builds and schedules the EC2 runner only for pushes to `master`.
+4. Make sure the EC2 security group allows inbound TCP 8080 from the clients that should reach the API. The workflow's health check runs on the instance itself, so it does not need public access to port 8080 or SSH access from GitHub.
+5. Stop any manually started copy of the application before its first service-managed deployment. Push an application change to `master`; the Actions run must pass the build job before deployment starts. Check the workflow log and then request `http://<EC2_PUBLIC_IP>:8080/api/health`.
+
+Each deployment keeps a commit-specific JAR under `~/springboot2026/releases` for manual rollback. The EC2 public IP should be replaced with an Elastic IP if you need a stable endpoint; Elastic IP billing depends on current AWS account and usage terms.
+
+### Alternative — Deploy to AWS with GitHub Actions and ECS Express Mode
+
+This is a setup guide; the repository's current deployment workflow still targets Cloud Run. AWS App Runner is closed to new customers, so for a new AWS account the managed container option to investigate is **Amazon ECS Express Mode**. It accepts a container image and creates an ECS/Fargate service, load balancer, networking, and autoscaling. Express Mode has no separate service fee, but its Fargate, load balancer, logs, and data transfer are billed resources. [AWS App Runner availability notice](https://docs.aws.amazon.com/apprunner/latest/dg/apprunner-availability-change.html), [ECS Express Mode overview and pricing](https://docs.aws.amazon.com/AmazonECS/latest/developerguide/express-service-overview.html)
+
+AWS Free Plan credits are temporary: new customers can get up to $200, and the Free Plan ends after six months or when credits are used up. The Free Plan also limits which AWS services can be used. Check that ECS/Fargate is available to your account and estimate the full resources before creating them. [AWS Free Tier FAQ](https://aws.amazon.com/free/free-tier-faqs/)
+
+#### Setup steps
+
+1. **Check the account and budget.** In AWS Console → Billing, confirm whether your account is on the Free or Paid Plan, check the remaining credits and expiry date, and create a budget alert. Do not upgrade the account plan unless you have decided that you accept pay-as-you-go charges.
+2. **Choose the AWS region.** `ap-south-1` (Mumbai) is a reasonable starting region for users in India. Confirm that ECS Express Mode and the supporting services are available in the selected region.
+3. **Build the container locally.** From the application directory, run `docker build --tag springboot2026-api:local .`. The repository Dockerfile packages Java 21 and exposes port 8080. If the build fails, resolve that before configuring AWS; the container must be buildable before it can be pushed to ECR.
+4. **Create an Amazon ECR repository.** ECR stores the image that ECS Express Mode runs. Use one repository, for example `springboot2026-api`, in the same AWS account and region as the service. AWS's deployment example uses an image tag based on the Git commit so each release can be identified and rolled back.
+5. **Create the ECS service roles.** ECS Express Mode needs a task execution role and an infrastructure role. Follow AWS's [first-service guide](https://docs.aws.amazon.com/AmazonECS/latest/developerguide/express-service-getting-started.html); avoid using broad administrator permissions for the application runtime.
+6. **Create a GitHub Actions deploy role with OIDC.** Add the GitHub OIDC identity provider in IAM and create a role whose trust policy is restricted to this GitHub repository and the `master` branch. Give it only the ECR push and ECS Express deployment permissions needed by the workflow. The workflow should use short-lived OIDC credentials, never a saved AWS access key. See the AWS-maintained [ECS Express Mode GitHub Action](https://github.com/aws-actions/amazon-ecs-deploy-express-service) and its IAM permission list.
+7. **Create the ECS Express Mode service from an image.** Create the service with the image in ECR, container port `8080`, and health-check path `/api/health`. Because this example currently stores books in memory, start with one task (`minTaskCount: 1`, `maxTaskCount: 1`) to avoid different instances holding different book lists. This keeps compute running and may use credits or incur charges; the in-memory data can still disappear on a restart. Move the data to a shared database before scaling beyond one task.
+8. **Add GitHub repository variables** under **Settings → Secrets and variables → Actions → Variables**:
+
+   | Variable | Example / value |
+   |---|---|
+   | `AWS_REGION` | `ap-south-1` |
+   | `AWS_ACCOUNT_ID` | Your 12-digit AWS account ID |
+   | `AWS_ROLE_ARN` | ARN of the GitHub OIDC deploy role |
+   | `ECR_REPOSITORY` | `springboot2026-api` |
+   | `ECS_SERVICE` | Name of the ECS Express Mode service |
+   | `ECS_EXECUTION_ROLE_ARN` | ECS task execution role ARN |
+   | `ECS_INFRASTRUCTURE_ROLE_ARN` | ECS Express infrastructure role ARN |
+
+9. **Wire the AWS workflow.** The workflow should run the existing verification job first, authenticate with `aws-actions/configure-aws-credentials`, log in to ECR, build and push the Docker image tagged with the commit SHA, then deploy that exact image with `aws-actions/amazon-ecs-deploy-express-service`. Use the AWS-maintained workflow example for the current action inputs and IAM permissions. Deploy only from `master`; pull requests should verify the code and build the image without deploying.
+10. **Smoke-test and roll back by image tag.** After deployment completes, request `https://<service-url>/api/health` and then exercise the book API. Keep the previous commit-tagged image in ECR so the workflow can redeploy it if the new revision fails.
+
+Do not enable both the Cloud Run and AWS workflows to deploy automatically on every `master` push unless deploying to both providers is intentional. Keep this AWS path as a reviewed alternative until the account's Free Plan access, costs, and target service are confirmed.
+
 ## 5. Interview coding practice
 
 Create `src/test/java/.../practice/` tests for each problem first. Implement the solution as a small pure Java method, document complexity, and include edge cases. Do not solve these with a controller or database.
