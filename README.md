@@ -13,16 +13,16 @@ This status is based on the source files and configuration in this checkout. “
 | Step 1: Java fundamentals | ✅ Implemented | Plain-Java practice package demonstrates classes, records, interfaces, enums, collections, equality, ordering, generics, exceptions, `Optional`, lambdas, method references, `java.time`, and complexity. Dedicated tests for the exercises are absent. |
 | Step 2: Spring Core + first endpoint | ✅ POC coverage added | Health controller/service plus `/api/core-demo` demonstrate stereotypes, configuration beans, constructor injection, `@Autowired`, `@Qualifier`, `@Primary`, `BeanFactory`/`ApplicationContext`, lifecycle callbacks, singleton/prototype scopes, and component scanning. Definitions and caveats are in the Spring Core guide below. |
 | Spring Boot fundamentals from the interview prompt | ✅ POC + definitions added | Why Boot, architecture/startup flow, conditional auto-configuration, existing starters/dependency management, and embedded web server are covered. Profile-based/external configuration is Step 6; Actuator is Step 8. |
-| Step 3: REST API | ✅ Implemented with planned deferrals | GET/POST/PUT/PATCH/DELETE, query-parameter search, path variables, request bodies, DTO mapping, and status codes are in the Book API. Pagination/sorting are Step 5; API versioning is Step 8. |
+| Step 3: REST API | ✅ Implemented | GET/POST/PUT/PATCH/DELETE, query-parameter search, path variables, request bodies, DTO mapping, and status codes are in the Book API. |
 | Step 4: validation and errors | ✅ Implemented | Create/replace/patch DTO constraints, `@Valid`, centralized advice, 400/404/409/500 responses. Automated tests for these paths are absent. |
 | Spring MVC request lifecycle | ✅ POC + definitions added | DispatcherServlet flow, handler mapping/adaptation, a servlet filter, an MVC interceptor, controller advice, exception handlers, and validation are covered below. |
-| Step 5: JPA/Hibernate | ⬜ Not implemented | JPA/H2 dependencies exist, but there is no `@Entity`, `JpaRepository`, database configuration, transaction, relationship, or JPA test. |
-| Step 6: profiles/configuration | ⬜ Not implemented | Only `application.properties` with the application name exists; no profiles or `@ConfigurationProperties`. |
+| Step 5: JPA/Hibernate | ✅ POC implemented | Book CRUD now uses a JPA entity, `JpaRepository`, H2, service transactions, derived filters, pagination/sorting, and a Publisher relationship for fetch behavior. JPA tests and migrations remain future work. |
+| Step 6: profiles/configuration | 🟡 Foundation present | `application-dev.properties` gates H2 Console; broader profile-specific settings, environment variables, and `@ConfigurationProperties` remain. |
 | Step 7: automated tests | 🟡 Minimal | One Spring context-load test exists. Service unit, MVC, repository, and full API integration tests are missing. |
 | Step 8: operations/deployment | 🟡 Partial | Dockerfile and deployment workflows/documentation exist. Actuator, structured logging/metrics, migrations, API security, caching, and production database settings are absent. |
 | Interview coding problems | 🟡 Listed, not solved | README lists DSA exercises, but the exercise implementations and focused tests are missing. |
 
-The learning prompt also asks for broad interview coverage beyond the current Book API. Still to study and code in focused labs: deeper Spring Boot condition-report/startup diagnostics; JPA/Hibernate behavior (persistence context, dirty checking, lazy/eager loading, N+1, relationships, JPQL); transaction ACID/propagation/isolation/rollback; Spring Security authentication/authorization, security filter chain, password encoding, JWT, CORS/CSRF; and microservices patterns (HTTP clients, gateways, discovery, resilience, Kafka, sagas, observability). Caching/Redis, connection pools, performance, and concurrency beyond the in-memory map also remain.
+The learning prompt also asks for broad interview coverage beyond the current Book API. Still to study and code in focused labs: deeper Spring Boot condition-report/startup diagnostics; advanced JPA/Hibernate behavior (dirty checking, N+1, relationships, JPQL); transaction ACID/propagation/isolation/rollback; Spring Security authentication/authorization, security filter chain, password encoding, JWT, CORS/CSRF; and microservices patterns (HTTP clients, gateways, discovery, resilience, Kafka, sagas, observability). Caching/Redis, connection pools, performance, and concurrency also remain.
 
 For the interview prompt's study priority, cover 🔴 Spring Core/DI, REST + MVC request flow, validation/errors, JPA basics, transactions, and security fundamentals first; 🟡 profiles/configuration, tests, observability, and performance next; 🟢 deeper distributed-system patterns after the foundations. Later code additions should keep using the same order: explain the problem, show the flow, implement one small example, add comments beside unfamiliar annotations, then practice interview questions.
 
@@ -126,7 +126,7 @@ These messages are normal when startup succeeds:
 - `Started Springboot2026Application` means Spring finished creating the application context.
 - `BUILD SUCCESSFUL` means Gradle completed the requested task. The configuration-cache suggestion is an optional Gradle performance feature.
 
-This checkout already includes Spring Web, Spring Data JPA, Validation, and H2 in `springboot2026 2/build.gradle`. The health and book endpoints can start an HTTP server on port 8080. JPA and H2 are dependencies only at this stage; the book API still uses an in-memory map until Step 5.
+This checkout includes Spring Web, Spring Data JPA, Validation, and H2 in `springboot2026 2/build.gradle`. The health and book endpoints run on port 8080; the Book API stores data in the H2 database configured in Step 5.
 
 ## 4. Build the scratch application, step by step
 
@@ -313,7 +313,7 @@ Injecting a prototype directly into a singleton normally gives that singleton on
 |---|---|---|
 | `@Component` | General-purpose class discovered and managed as a bean. | `FriendlyGreetingFormatter`, `CoreDemoComponent`, and `PrototypeNote`. |
 | `@Service` | A component whose role is application/business logic. | `BookService` and `CoreDemoService`. |
-| `@Repository` | A component whose role is data access; Spring can translate certain persistence exceptions. | `InMemoryBookRepository`. |
+| `@Repository` | A component whose role is data access; Spring can translate certain persistence exceptions. | Spring Data creates the `BookRepository` implementation. |
 | `@Controller` | Spring MVC controller. A returned string normally names a view. | `TraditionalController`; `@ResponseBody` makes its returned string become response text. |
 | `@RestController` | Controller whose handler return values are response bodies; effectively combines `@Controller` and `@ResponseBody`. | `HealthController`, `BookController`, and `CoreDemoController`. |
 | `@Configuration` | Declares a Java configuration class whose methods can define beans. | `CoreDemoConfiguration`. |
@@ -469,13 +469,13 @@ Use PUT when the client sends the complete replacement representation. Use PATCH
 | `@PathVariable` | Implemented by item routes such as `/api/books/{id}`. |
 | `@RequestBody` | Implemented for create, replace, and patch JSON DTOs. |
 | `ResponseEntity` | Used to return 201 + `Location` for create and 204 for delete; the advice uses it for error status/body pairs. |
-| DTOs; entity vs DTO | Request/response DTOs are implemented. `domain.Book` is not a persistence entity; JPA entity code is Step 5. |
+| DTOs; entity vs DTO | Request/response DTOs are implemented. `domain.Book` is a JPA entity, but controllers still return DTOs rather than persistence objects. |
 | API validation | Implemented in Step 4 for create, replace, and patch. |
-| Pagination and sorting | Defined as later work in Step 5, alongside repository queries; no in-memory fake paging API is added here. |
+| Pagination and sorting | Implemented in Step 5 using Spring Data `Pageable`, database queries, and sortable fields. |
 | API versioning | A version changes the public API contract (often a URI prefix such as `/v1` or a header). A small POC and tradeoffs are reserved for Step 8. |
 | Exception handling and global exception handling | Implemented in Step 4 with custom application exceptions and `@RestControllerAdvice` / `@ExceptionHandler`. |
 
-Pagination returns a bounded portion of a larger result set; sorting orders that result by chosen fields. These are deferred to Step 5 so they can use Spring Data `Pageable` and database ordering instead of loading every row into memory. Versioning stays in Step 8 as already planned. For this PATCH POC, omitted or explicit `null` fields mean “unchanged”; `{}` is therefore a no-op. This is a small custom JSON contract, not a complete JSON Merge Patch implementation.
+Pagination returns a bounded portion of a larger result set; sorting orders that result by chosen fields. The Book API uses Spring Data `Pageable` so the database returns just the requested page. API versioning stays in Step 8 as already planned. For this PATCH POC, omitted or explicit `null` fields mean “unchanged”; `{}` is therefore a no-op. This is a small custom JSON contract, not a complete JSON Merge Patch implementation.
 
 #### The layers and why they are separate
 
@@ -486,18 +486,18 @@ BookController       Knows URLs, HTTP methods, and status codes
         ↓
 BookService          Knows the application operation
         ↓
-BookRepository       Describes book storage operations
+BookRepository       Spring Data JPA interface
         ↓
-InMemoryBookRepository stores books in a Map
+H2 database          Stores books in the books table
 ```
 
-- `domain/Book.java` is the application's book object: ID, title, author, and publication year. It is a plain Java class, not a JPA entity yet.
+- `domain/Book.java` is the application's JPA entity: ID, title, author, and publication year.
 - `dto/BookRequest.java` is the data the client may send. It does not contain an ID because the server assigns one. `dto/BookResponse.java` is the data sent back. These records keep the API's JSON shape separate from the storage object.
-- `repository/BookRepository.java` is an interface: it names operations (`findAll`, `findById`, `save`, `deleteById`) without choosing a storage implementation. `InMemoryBookRepository.java` implements those operations using a concurrent map and an ID counter. The data disappears when the application stops.
+- `repository/BookRepository.java` extends `JpaRepository`; Spring Data supplies its implementation for common database operations and the derived search methods.
 - `service/BookService.java` performs the operation and converts between domain books and response DTOs. It does not know about URL paths or HTTP status codes.
-- `controller/BookController.java` connects HTTP requests to service calls. It does not know that this version stores data in a map.
+- `controller/BookController.java` connects HTTP requests to service calls. It does not know SQL or database details.
 
-This separation means we can replace the map implementation with database storage later without changing what a controller URL means. The classes are Spring beans: `@Repository` marks the storage implementation, `@Service` marks the service, and `@RestController` marks the HTTP controller. Spring finds these classes by scanning below `com.revision.springboot2026` and supplies dependencies through their constructors.
+This separation keeps persistence details out of the controller. Spring Data creates the repository bean; `@Service` marks the service, and `@RestController` marks the HTTP controller. Spring finds these classes by scanning below `com.revision.springboot2026` and supplies dependencies through their constructors.
 
 #### Read the controller annotations and request parameters
 
@@ -529,7 +529,7 @@ This separation means we can replace the map implementation with database storag
 
 #### Domain object vs DTO
 
-`domain/Book` is the application's in-memory domain object. `BookRequest` and `BookResponse` are **DTOs** (data transfer objects) defining what clients may send and receive. Keeping these separate lets the API avoid exposing storage details and lets request and response shapes differ. This `Book` is not a JPA entity yet; Step 5 introduces an entity. An entity models persistence state and has provider requirements, while a DTO models an API contract. Avoid returning a JPA entity directly from a controller.
+`domain/Book` is the JPA entity that models persisted state. `BookRequest` and `BookResponse` are **DTOs** (data transfer objects) defining what clients may send and receive. Keeping these separate lets the API avoid exposing persistence details and lets request and response shapes differ. An entity has provider requirements, while a DTO models an API contract. Avoid returning a JPA entity directly from a controller.
 
 #### Routes and expected behavior
 
@@ -545,9 +545,9 @@ This separation means we can replace the map implementation with database storag
 
 #### Try the endpoints
 
-Start `Springboot2026Application.main()` in IntelliJ. Run these commands from a terminal. The POST response includes the created ID; this in-memory example starts IDs at 1 after each app restart.
+Start `Springboot2026Application.main()` in IntelliJ. Run these commands from a terminal. The POST response includes the database-generated ID. The database is in memory, so its rows reset when the application stops.
 
-List all books (initially an empty JSON array):
+List a page of books (initially an empty page object containing `content` and pagination metadata):
 
 ```bash
 curl -i http://localhost:8080/api/books
@@ -560,6 +560,19 @@ curl -i -X POST http://localhost:8080/api/books \
   -H 'Content-Type: application/json' \
   -d '{"title":"Effective Java","author":"Joshua Bloch","publicationYear":2018}'
 ```
+
+To add 20 distinct sample books for practicing pagination and sorting, run this Bash loop:
+
+```bash
+for i in {1..20}; do
+  curl -sS -o /dev/null -w "Book $i: HTTP %{http_code}\n" \
+    -X POST http://localhost:8080/api/books \
+    -H 'Content-Type: application/json' \
+    -d "{\"title\":\"Practice Book $i\",\"author\":\"Author $i\",\"publicationYear\":$((2000 + i))}"
+done
+```
+
+Each line should report `HTTP 201`. The title and author are unique for each request. Re-running the loop reports `HTTP 409` for books already created; the in-memory database resets when you stop the app.
 
 Fetch the created book (assuming the returned ID was `1`):
 
@@ -599,13 +612,11 @@ Try `GET /api/books/999`, `PATCH /api/books/999`, and `DELETE /api/books/999` to
 
 #### Trace POST from JSON to the response
 
-For POST, Spring reads the JSON body because of `@RequestBody` and creates `BookRequest`. `@Valid` checks its constraints before the controller runs. The controller passes the valid request to `BookService.create`. The service checks the duplicate rule, makes a `Book` with a temporary ID of 0, and asks the repository to save it. The map implementation assigns the next ID, stores it, and returns it. The service maps the saved book into `BookResponse`. Finally, the controller returns HTTP 201 with the response body and a `Location` header. Step 4 shows how validation and error responses work.
+For POST, Spring reads the JSON body because of `@RequestBody` and creates `BookRequest`. `@Valid` checks its constraints before the controller runs. The controller passes the valid request to `BookService.create`. The service checks for an existing title/author pair, creates a JPA `Book`, and asks `BookRepository` to save it. The database assigns the ID and Spring maps the entity into `BookResponse`. Finally, the controller returns HTTP 201 with the response body and a `Location` header. Step 4 shows how validation and error responses work.
 
 #### Why use an interface for the repository?
 
-`BookService` depends on the `BookRepository` interface, not `InMemoryBookRepository` directly. The interface is the promise of what storage can do; the in-memory class is one way to do it. Later we can provide a database implementation with the same operations. This is also dependency injection: Spring sees the repository constructor parameter and supplies the repository bean. There is one implementation now, so Spring knows which object to pass.
-
-The Map is suitable for this first local exercise: looking up by key is expected O(1), while listing all books is O(n). It is not persistent storage: a restart clears every book, and the data is not shared across application instances. Step 5 replaces it with JPA and a database.
+`BookService` depends on the `BookRepository` interface, not on an implementation class. `BookRepository` now extends `JpaRepository<Book, Long>`; Spring Data creates the implementation and supplies it through constructor injection. During the first Step 3 iteration, this interface was backed by a `Map`; Step 5 replaced that adapter with database persistence. The practice package still contains separate collection exercises if you want to revisit map complexity.
 
 The package layout now follows these responsibilities:
 
@@ -613,7 +624,7 @@ The package layout now follows these responsibilities:
 com.revision.springboot2026
 ├── controller/       # HTTP mapping, status codes, request/response types
 ├── service/          # business rules and transaction boundary
-├── repository/       # storage contract and in-memory implementation
+├── repository/       # Spring Data JPA repository interface
 ├── domain/           # application domain objects
 ├── dto/              # API request and response models
 ├── exception/        # domain errors and HTTP error mapping
@@ -739,33 +750,63 @@ This demonstrates `@ControllerAdvice`/`@RestControllerAdvice` and `@ExceptionHan
 
 #### Duplicate rule and its cost
 
-The exercise treats title and author as a duplicate pair, ignoring letter case and surrounding spaces. The service checks the current list before saving, which is O(n) for n books. That is fine for this small in-memory lesson. A real database should enforce uniqueness with a unique constraint because a read-then-write check alone can race when two requests arrive at the same time.
+The exercise treats title and author as a duplicate pair, ignoring letter case and surrounding spaces. The service asks the repository to check for that pair in the database. A read-then-write check can still race when two requests arrive at the same time, so a production database should also enforce the uniqueness rule with a suitable constraint or normalized unique key.
 
 Validation does not prove that a request is authorized, that the book is unique in a distributed system, or that a database write will succeed. Those concerns belong to later security, persistence, and transaction lessons.
 
 ### Step 5 — Add persistence with JPA and H2
 
-1. Mark the persistence model with `@Entity`; define its ID with `@Id` and `@GeneratedValue`.
-2. Create a `BookRepository` extending `JpaRepository<Book, Long>`.
-3. Add a service using constructor injection and `@Transactional` for write operations.
-4. Configure an in-memory H2 database in `src/main/resources/application.properties`:
+This step is implemented in the Book API. Follow `domain/Book.java` → `repository/BookRepository.java` → `service/BookService.java` → `controller/BookController.java` to trace a row from the database to its JSON DTO.
 
-```properties
-spring.datasource.url=jdbc:h2:mem:springboot2026
-spring.datasource.driver-class-name=org.h2.Driver
-spring.datasource.username=sa
-spring.datasource.password=
-spring.jpa.hibernate.ddl-auto=update
-spring.h2.console.enabled=true
+#### How the persistence pieces work
+
+| Code / concept | What it means |
+|---|---|
+| `@Entity` on `Book` | This class is a database-mapped object. JPA maps its fields to columns in the `books` table. It is an ordinary mutable class, not a record, and has a protected no-argument constructor for the persistence provider. |
+| `@Id` and `@GeneratedValue` | `id` is the primary key. For a new book it is null; the database generates the value on insert. |
+| `@Column` | Declares column names and basic constraints such as non-null and maximum text length. Request validation still gives clients friendlier 400 errors before database constraints are reached. |
+| `JpaRepository<Book, Long>` | Spring Data supplies CRUD methods such as `findById`, `save`, `deleteById`, and `findAll(Pageable)`; the generic types mean the entity is `Book` and its ID type is `Long`. |
+| Derived query methods | Spring parses names such as `findByTitleContainingIgnoreCase` and builds a database query. No handwritten implementation is needed for these simple filters. |
+| `@Transactional` | Groups related database work into one transaction. The service class defaults to read-only transactions; create, replace, patch, and delete override that with write transactions. A runtime exception rolls back the write. |
+| Persistence context / dirty checking | An entity loaded in a transaction is managed. When `replaceDetails` changes it, Hibernate notices and writes the update when the transaction commits; calling `save` again is not required for that managed object. |
+| DTO mapping | The service converts `Book` to `BookResponse`. Controllers return DTOs, so database fields and lazy relationships do not become accidental API output. |
+
+The repository query `existsByTitleIgnoreCaseAndAuthorIgnoreCase` keeps the existing duplicate rule out of the controller. It is still a check-before-insert, so two concurrent requests can race; a production system should enforce uniqueness in the database as well. `ddl-auto=update` does not create that business constraint automatically.
+
+#### Pagination and sorting
+
+`Pageable` tells Spring Data which zero-based page to request, how many rows to include, and what order to use. `Page<BookResponse>` includes the `content` plus metadata such as `totalElements`, `totalPages`, and the current page. The API defaults to 10 rows sorted by ID, and the configured maximum page size is 100.
+
+```bash
+# First page, five books per page, sorted by title ascending
+curl -i 'http://localhost:8080/api/books?page=0&size=5&sort=title,asc'
+
+# Search in the database and sort matches by publication year descending
+curl -i 'http://localhost:8080/api/books/search?author=Bloch&page=0&size=5&sort=publicationYear,desc'
 ```
 
-Use `ddl-auto=update` only for this disposable learning database. Learn schema migrations with Flyway or Liquibase before using a persistent or shared database. Keep H2 Console development-only and do not expose it in production.
+Spring Data translates the page and sort into database work, instead of loading every row into Java and sorting in memory. A page query usually also runs a count query to produce total-page metadata.
 
-Practice repository-derived queries, pagination (`Pageable`), sorting, and the difference between lazy and eager associations. Avoid returning JPA entities directly from API endpoints; map to DTOs.
+#### Lazy and eager relationships
+
+`Book.publisher` is a `@ManyToOne(fetch = FetchType.LAZY)` example, and `Publisher.books` is `@OneToMany(fetch = FetchType.LAZY)`. Lazy means related rows are fetched only when code accesses that relationship; eager means the provider must fetch it as part of loading the entity (though it may use more than one SQL query). One-to-many collections default to lazy; many-to-one relationships default to eager in JPA, so the Book mapping explicitly chooses lazy. Prefer deliberate fetch plans over changing everything to eager: eager relationships can load data the request does not need, while touching lazy relationships one row at a time can cause the N+1 query problem. This API's DTO does not expose Publisher, and `spring.jpa.open-in-view=false` helps reveal accidental lazy access outside a service transaction.
+
+#### H2 configuration and safe boundaries
+
+The in-memory connection and `ddl-auto=update` are configured in `application.properties` for this disposable lesson. H2 Console is enabled only in `application-dev.properties`, so start the app with the `dev` profile to use it:
+
+```bash
+cd 'springboot2026 2'
+./gradlew bootRun --args='--spring.profiles.active=dev'
+```
+
+The console is available at `http://localhost:8080/h2-console` while the app is running; use JDBC URL `jdbc:h2:mem:springboot2026`, username `sa`, and a blank password. The API itself uses H2 even without the dev profile; only the browser console is profile-gated.
+
+Use `ddl-auto=update` only for this disposable learning database. Learn schema migrations with Flyway or Liquibase before using a persistent or shared database. Do not expose H2 Console in production. The database is in memory, so rows reset when the application stops.
 
 ### Step 6 — Configuration and profiles
 
-Move environment-specific settings out of Java code. Add `application-dev.properties` and `application-test.properties`, then activate a profile from IntelliJ's run configuration or with:
+Move environment-specific settings out of Java code. The `application-dev.properties` file already gates the H2 Console; add `application-test.properties` for test-specific settings, then activate a profile from IntelliJ's run configuration or with:
 
 ```bash
 ./mvnw spring-boot:run -Dspring-boot.run.profiles=dev

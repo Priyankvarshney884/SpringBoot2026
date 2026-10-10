@@ -6,7 +6,9 @@ import com.revision.springboot2026.dto.BookResponse;
 import com.revision.springboot2026.service.BookService;
 import jakarta.validation.Valid;
 import java.net.URI;
-import java.util.List;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.web.PageableDefault;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -32,21 +34,24 @@ public class BookController {
         this.bookService = bookService;
     }
 
-    // GET /api/books returns all books.
+    // Spring turns page, size, and sort query parameters into a Pageable value.
     @GetMapping
-    public List<BookResponse> findAll() {
-        return bookService.findAll();
+    public Page<BookResponse> findAll(
+            // Defaults to page 0, 10 items, sorted by ID when the caller sends no options.
+            @PageableDefault(size = 10, sort = "id") Pageable pageable) {
+        return bookService.findAll(pageable);
     }
 
     // @RequestParam reads optional query-string filters, for example ?author=Bloch.
-    // This is a simple O(n) in-memory search; database paging and sorting come in Step 5.
+    // Filters, page limits, and ordering are executed by Spring Data in the database.
     // @GetMapping gives this search a separate route from the plain list route.
     @GetMapping("/search")
-    public List<BookResponse> search(
+    public Page<BookResponse> search(
             // An absent parameter is null because required=false.
             @RequestParam(required = false) String title,
-            @RequestParam(required = false) String author) {
-        return bookService.search(title, author);
+            @RequestParam(required = false) String author,
+            @PageableDefault(size = 10, sort = "id") Pageable pageable) {
+        return bookService.search(title, author, pageable);
     }
 
     // GET /api/books/1 returns book 1, or a 404 response if it does not exist.

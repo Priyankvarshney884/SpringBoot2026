@@ -7,39 +7,45 @@ import com.revision.springboot2026.dto.BookResponse;
 import com.revision.springboot2026.exception.BookNotFoundException;
 import com.revision.springboot2026.exception.DuplicateBookException;
 import com.revision.springboot2026.repository.BookRepository;
-import java.util.List;
-import java.util.Locale;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
-/** Applies book-related application rules and keeps storage details out of the controller. */
-// @Service tells Spring to create this application-service bean.
+/** Applies book rules and maps between API DTOs and JPA entities. */
+// Spring creates this service bean and supplies its repository through the constructor.
 @Service
+// Reads default to read-only; write methods below open normal transactions.
+@Transactional(readOnly = true)
 public class BookService {
     private final BookRepository bookRepository;
 
-    // Spring passes in the repository bean. The service does not create storage itself.
     public BookService(BookRepository bookRepository) {
         this.bookRepository = bookRepository;
     }
 
-    public List<BookResponse> findAll() {
-        return bookRepository.findAll().stream()
-                .map(this::toResponse)
-                .toList();
+    public Page<BookResponse> findAll(Pageable pageable) {
+        // Page.map transforms each row to a DTO and preserves page and sort metadata.
+        return bookRepository.findAll(pageable).map(this::toResponse);
     }
 
-    /** Optional title/author filters; filtering the in-memory list takes O(n). */
-    public List<BookResponse> search(String title, String author) {
-        String titleFilter = normalizeFilter(title);
-        String authorFilter = normalizeFilter(author);
+    public Page<BookResponse> search(String title, String author, Pageable pageable) {
+        String titleFilter = cleanFilter(title);
+        String authorFilter = cleanFilter(author);
+        Page<Book> results;
 
-        return bookRepository.findAll().stream()
-                .filter(book -> titleFilter.isEmpty()
-                        || normalize(book.getTitle()).contains(titleFilter))
-                .filter(book -> authorFilter.isEmpty()
-                        || normalize(book.getAuthor()).contains(authorFilter))
-                .map(this::toResponse)
-                .toList();
+        // Use a database query for each combination of optional filters.
+        if (!titleFilter.isEmpty() && !authorFilter.isEmpty()) {
+            results = bookRepository.findByTitleContainingIgnoreCaseAndAuthorContainingIgnoreCase(
+                    titleFilter, authorFilter, pageable);
+        } else if (!titleFilter.isEmpty()) {
+            results = bookRepository.findByTitleContainingIgnoreCase(titleFilter, pageable);
+        } else if (!authorFilter.isEmpty()) {
+            results = bookRepository.findByAuthorContainingIgnoreCase(authorFilter, pageable);
+        } else {
+            results = bookRepository.findAll(pageable);
+        }
+        return results.map(this::toResponse);
     }
 
     public BookResponse findById(long id) {
@@ -48,76 +54,79 @@ public class BookService {
         return toResponse(book);
     }
 
+    @Transactional
     public BookResponse create(BookRequest request) {
-        ensureTitleAndAuthorAreUnique(request, 0);
-        Book newBook = new Book(0, request.title(), request.author(), request.publicationYear());
-        Book savedBook = bookRepository.save(newBook);
+        String title = cleanInput(request.title());
+        String author = cleanInput(request.author());
+        ensureTitleAndAuthorAreUnique(title, author, null);
+
+        // A null ID means this is new; @GeneratedValue asks the database for its ID.
+        Book savedBook = bookRepository.save(
+                new Book(title, author, request.publicationYear()));
         return toResponse(savedBook);
     }
 
+    @Transactional
     public BookResponse replace(long id, BookRequest request) {
-        // Check existence first so an update never silently creates a new record.
-        bookRepository.findById(id)
-                .orElseThrow(() -> new BookNotFoundException(id));
-        ensureTitleAndAuthorAreUnique(request, id);
+        Book currentBook = findEntity(id);
+        String title = cleanInput(request.title());
+        String author = cleanInput(request.author());
+        ensureTitleAndAuthorAreUnique(title, author, id);
 
-        Book replacement = new Book(id, request.title(), request.author(), request.publicationYear());
-        Book savedBook = bookRepository.save(replacement);
-        return toResponse(savedBook);
+        // currentBook is managed in this transaction; Hibernate tracks these field changes.
+        currentBook.replaceDetails(title, author, request.publicationYear());
+        return toResponse(currentBook);
     }
 
+    @Transactional
     public BookResponse patch(long id, BookPatchRequest patch) {
-        // PATCH needs the current values so omitted fields can be preserved.
-        Book currentBook = bookRepository.findById(id)
-                .orElseThrow(() -> new BookNotFoundException(id));
-
-        String title = patch.title() == null ? currentBook.getTitle() : patch.title();
-        String author = patch.author() == null ? currentBook.getAuthor() : patch.author();
+        Book currentBook = findEntity(id);
+        String title = patch.title() == null
+                ? currentBook.getTitle() : cleanInput(patch.title());
+        String author = patch.author() == null
+                ? currentBook.getAuthor() : cleanInput(patch.author());
         int year = patch.publicationYear() == null
-                ? currentBook.getPublicationYear()
-                : patch.publicationYear();
+                ? currentBook.getPublicationYear() : patch.publicationYear();
 
-        BookRequest completeReplacement = new BookRequest(title, author, year);
-        ensureTitleAndAuthorAreUnique(completeReplacement, id);
-
-        Book replacement = new Book(id, title, author, year);
-        return toResponse(bookRepository.save(replacement));
+        ensureTitleAndAuthorAreUnique(title, author, id);
+        currentBook.replaceDetails(title, author, year);
+        return toResponse(currentBook);
     }
 
+    @Transactional
     public void delete(long id) {
-        if (!bookRepository.deleteById(id)) {
+        if (!bookRepository.existsById(id)) {
             throw new BookNotFoundException(id);
         }
+        bookRepository.deleteById(id);
     }
 
-    private BookResponse toResponse(Book book) {
-        return new BookResponse(
-                book.getId(), book.getTitle(), book.getAuthor(), book.getPublicationYear());
+    private Book findEntity(long id) {
+        return bookRepository.findById(id)
+                .orElseThrow(() -> new BookNotFoundException(id));
     }
 
-    /**
-     * This simple in-memory exercise scans all books, so duplicate checking is O(n).
-     * A database version can enforce this rule with a unique constraint/index instead.
-     */
-    private void ensureTitleAndAuthorAreUnique(BookRequest request, long bookBeingReplaced) {
-        String requestedTitle = normalize(request.title());
-        String requestedAuthor = normalize(request.author());
-
-        boolean duplicateExists = bookRepository.findAll().stream()
-                .anyMatch(book -> book.getId() != bookBeingReplaced
-                        && normalize(book.getTitle()).equals(requestedTitle)
-                        && normalize(book.getAuthor()).equals(requestedAuthor));
-
+    private void ensureTitleAndAuthorAreUnique(String title, String author, Long excludedId) {
+        boolean duplicateExists = excludedId == null
+                ? bookRepository.existsByTitleIgnoreCaseAndAuthorIgnoreCase(title, author)
+                : bookRepository.existsByTitleIgnoreCaseAndAuthorIgnoreCaseAndIdNot(
+                        title, author, excludedId);
         if (duplicateExists) {
             throw new DuplicateBookException();
         }
     }
 
-    private String normalize(String value) {
-        return value.trim().toLowerCase(Locale.ROOT);
+    private BookResponse toResponse(Book book) {
+        // Map explicitly so JPA entities and lazy associations never leak through the API.
+        return new BookResponse(
+                book.getId(), book.getTitle(), book.getAuthor(), book.getPublicationYear());
     }
 
-    private String normalizeFilter(String value) {
-        return value == null ? "" : normalize(value);
+    private String cleanInput(String value) {
+        return value.trim();
+    }
+
+    private String cleanFilter(String value) {
+        return value == null ? "" : value.trim();
     }
 }
