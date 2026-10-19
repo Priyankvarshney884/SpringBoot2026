@@ -2,6 +2,8 @@ package com.revision.springboot2026.exception;
 
 import java.util.Map;
 import java.util.TreeMap;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.converter.HttpMessageNotReadableException;
@@ -13,6 +15,8 @@ import org.springframework.web.bind.annotation.RestControllerAdvice;
 // Spring applies this advice to exceptions raised by any controller.
 @RestControllerAdvice
 public class ApiExceptionHandler {
+    // Keep diagnostic details in server logs, where operators can investigate safely.
+    private static final Logger logger = LoggerFactory.getLogger(ApiExceptionHandler.class);
 
     // Bean validation failures include field-level details we can safely show to the client.
     @ExceptionHandler(MethodArgumentNotValidException.class)
@@ -46,6 +50,8 @@ public class ApiExceptionHandler {
     // Safety net: do not send exception messages or stack traces to API clients.
     @ExceptionHandler(Exception.class)
     public ResponseEntity<ApiError> handleUnexpected(Exception exception) {
+        // Log the exception and stack trace for debugging without exposing internals in the HTTP response.
+        logger.error("Unexpected error while handling API request", exception);
         return response(HttpStatus.INTERNAL_SERVER_ERROR, "An unexpected error occurred", Map.of());
     }
 
