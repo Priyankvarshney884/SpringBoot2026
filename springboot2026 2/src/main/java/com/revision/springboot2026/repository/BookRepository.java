@@ -1,16 +1,23 @@
 package com.revision.springboot2026.repository;
 
 import com.revision.springboot2026.domain.Book;
-import java.util.List;
-import java.util.Optional;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.jpa.repository.JpaRepository;
 
-/** Describes the book storage operations without saying how storage works. */
-public interface BookRepository {
-    List<Book> findAll();
+/** Spring Data builds the database implementation from this interface at startup. */
+// JpaRepository supplies CRUD, paging, sorting, and count operations for Book rows with Long IDs.
+public interface BookRepository extends JpaRepository<Book, Long> {
+    // Spring parses the method name and creates a case-insensitive SQL query.
+    Page<Book> findByTitleContainingIgnoreCaseAndAuthorContainingIgnoreCase(
+            String title, String author, Pageable pageable);
 
-    Optional<Book> findById(long id);
+    Page<Book> findByTitleContainingIgnoreCase(String title, Pageable pageable);
 
-    Book save(Book book);
+    Page<Book> findByAuthorContainingIgnoreCase(String author, Pageable pageable);
 
-    boolean deleteById(long id);
+    boolean existsByTitleIgnoreCaseAndAuthorIgnoreCase(String title, String author);
+
+    boolean existsByTitleIgnoreCaseAndAuthorIgnoreCaseAndIdNot(
+            String title, String author, Long id);
 }
