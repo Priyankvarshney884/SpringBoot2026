@@ -34,6 +34,11 @@ public class UserService {
         // Missing ID par empty result rahega; existing record ko save karke update persist hota hai.
         return findUserById(id).map(existingUser -> {
             existingUser.setName(updatedUser.getName());
+            existingUser.setEmail(updatedUser.getEmail());
+            existingUser.setPhone(updatedUser.getPhone());
+            existingUser.setRole(updatedUser.getRole());
+            // PUT replacement hai: absent address ko null set karke orphan removal apply hota hai.
+            existingUser.setAddress(updatedUser.getAddress());
             return userRepository.save(existingUser);
         });
     }
