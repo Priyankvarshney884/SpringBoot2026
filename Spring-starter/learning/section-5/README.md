@@ -48,7 +48,7 @@ In terms ko interchangeable mat samjho: JPA specification hai, Hibernate impleme
 
 ### Current project se relation
 
-Section 5 ke start par project Spring Boot 4.1.1 aur Java 21 par tha, aur `UserService` in-memory `List` use karta tha. Play48 ke approved setup ke baad `pom.xml` mein JPA/H2 dependencies aur `application.properties` mein in-memory datasource/JPA settings maujood hain. Lekin `User` abhi entity nahi aur service in-memory list hi use karti hai, isliye actual user records abhi database mein persist nahi hote.
+Section 5 ke start par project Spring Boot 4.1.1 aur Java 21 par tha, aur `UserService` in-memory `List` use karta tha. Play48 ke approved setup ke baad `pom.xml` mein JPA/H2 dependencies aur `application.properties` mein in-memory datasource/JPA settings maujood hain. Is section ke implementation steps mein `User` entity aur `UserRepository` add kiye gaye, aur `UserService` ko repository-backed banaya gaya. Neeche Play49–52 mein mapping, data flow aur verification ka breakdown hai.
 
 ### Is section ka implementation flow
 
@@ -60,11 +60,11 @@ Section 5 ke start par project Spring Boot 4.1.1 aur Java 21 par tha, aur `UserS
 6. `UserService` ko in-memory list se repository-backed operations mein badalna.
 7. API aur persistence behavior test karna, including create/read/update aur restart/configuration expectations.
 
-Is flow ke pehle teen setup steps approve hokar complete hain; entity mapping se aage ke steps pending hain. Har coding/configuration file ek-ek karke review aur `PASS` ke baad hi aage badhegi. Existing Java version aur Spring Boot version bina clear reason aur approval ke change nahi honge.
+Setup, entity mapping, repository aur service implementation steps complete hain. Har coding/configuration file review ke liye alag dikhayi gayi aur `PASS` ke baad hi agle file par kaam hua. Existing Java version aur Spring Boot version nahi badle.
 
 ### Recap
 
-JPA relational database persistence ke liye Java standard hai. Hibernate provider ke roop mein JPA implement karta hai, jabki Spring Data JPA repository code ko simplify karta hai. Hamara next learning goal in-memory user list ko approved JPA/H2 setup ke through persistent storage se replace karna hai.
+JPA relational database persistence ke liye Java standard hai. Hibernate provider ke roop mein JPA implement karta hai, jabki Spring Data JPA repository code ko simplify karta hai. Is section mein in-memory user list ko entity/repository-backed H2 persistence se replace kiya gaya; runtime verification Play52 ke checklist mein hai.
 
 ## Play45 — Understanding the Data Access Layer
 
@@ -88,7 +88,7 @@ JPA provider (Hibernate) — ORM aur SQL execution
 Database (is section mein H2)
 ```
 
-Section 4 mein `UserService` seedha in-memory `List<User>` use karta tha. JPA setup ke baad repository database operations ka boundary banegi. Service user operations ko coordinate karegi, aur controller HTTP layer tak limited rahega. Har chhote example mein extra layer add karna zaroori nahi, lekin repository ko service/controller responsibilities se alag rakhne se data access ko baad mein replace ya test karna aasaan ho sakta hai.
+Section 4 mein `UserService` seedha in-memory `List<User>` use karta tha. Ab `UserRepository` database operations ka boundary hai. Service user operations ko coordinate karti hai, aur controller HTTP layer tak limited rehta hai. Har chhote example mein extra layer add karna zaroori nahi, lekin repository ko service/controller responsibilities se alag rakhne se data access ko baad mein replace ya test karna aasaan ho sakta hai.
 
 ### JPA repository ka role
 
@@ -102,7 +102,7 @@ Spring Data JPA repository aam taur par entity type aur ID type ke saath declare
 
 ### Recap
 
-DAL data storage operations ko application ke baaki parts se separate karti hai. Is User API ka target flow Controller → Service → Repository → JPA provider → H2 hai. H2 dependency/configuration maujood hai, lekin repository aur entity-based persistence abhi implement nahi hui.
+DAL data storage operations ko application ke baaki parts se separate karti hai. Is User API ka flow Controller → Service → Repository → JPA provider → H2 hai. Entity, repository aur service implementation maujood hain; context aur main API flow ka automated test pass hua, manual edge checks Play52 mein listed hain.
 
 ## Play46 — H2 Database
 
@@ -131,7 +131,7 @@ H2 relational database
 
 ### Current workspace se relation
 
-Play48 ke approved setup ke baad H2 driver `pom.xml` mein aur datasource URL `application.properties` mein configured hain. `User` entity aur repository abhi add nahi hue, isliye user records abhi H2 mein store nahi ho rahe; woh next implementation lessons ka kaam hai.
+Play48 ke approved setup ke baad H2 driver `pom.xml` mein aur datasource URL `application.properties` mein configured hain. Play49–51 mein `User` entity, repository aur repository-backed service add hue; runtime verification ke steps Play52 mein diye hain.
 
 ### Common confusion
 
@@ -141,7 +141,7 @@ Play48 ke approved setup ke baad H2 driver `pom.xml` mein aur datasource URL `ap
 
 ### Recap
 
-H2 ek lightweight relational database hai jo local learning aur tests mein convenient hai. Database mode aur JDBC URL decide karte hain ki data memory-only hai ya file-backed. Is project mein Play48 se `jdbc:h2:mem:userdb` configure hai; actual entity persistence next lessons mein implement aur verify hogi.
+H2 ek lightweight relational database hai jo local learning aur tests mein convenient hai. Database mode aur JDBC URL decide karte hain ki data memory-only hai ya file-backed. Is project mein Play48 se `jdbc:h2:mem:userdb` configure hai aur Play49–51 mein entity persistence implement hui; API integration test pass hua, restart behavior manually verify karna baaki hai.
 
 ## Play47 — NEW: Spring Boot 4 Update
 
@@ -177,14 +177,84 @@ spring.jpa.show-sql=true
 - `spring.jpa.show-sql=true` generated SQL console mein dikhata hai, jo learning ke liye helpful hai; verbose logging ke trade-off ka dhyan rakho.
 - `DB_CLOSE_ON_EXIT=FALSE` embedded database shutdown ko Spring Boot ke lifecycle se coordinate karne mein help karta hai.
 
-**Current caveat:** Configuration add ho gayi hai, lekin `User` class abhi JPA `@Entity` nahi bani aur repository abhi define nahi hui. Isliye user table/entity persistence abhi complete nahi. Agla step Play49 ke liye `User.java` ko entity mapping mein badalna hoga, approval ke baad.
+**Implementation update:** Play49 mein `User` ko `@Entity` banaya gaya, Play50 mein `UserRepository` add hua, aur Play51 mein service ke in-memory list operations repository calls se replace hue. Isse application H2 mein users read/write kar sakti hai; actual runtime verification Play52 ke steps se karein.
 
 ### Configuration verify karna
 
-Entity aur repository present hone ke baad application/test context start karke datasource/JPA initialization logs check karenge. Sirf properties file hona persistence verify nahi karta. H2 in-memory hone ke kaaran process restart ke across records rehne ki expectation nahi rakhni.
+Entity aur repository present hain. `mvn test` ke dauran application context, datasource aur JPA initialization successful rahe. Sirf properties file hona persistence verify nahi karta; API integration test ne database-backed CRUD flow exercise kiya. H2 in-memory hone ke kaaran process restart ke across records rehne ki expectation nahi rakhni.
 
 **Official reference:** [Spring Boot 4.1 — SQL Databases](https://docs.spring.io/spring-boot/4.1/reference/data/sql.html)
 
-## Remaining lesson modules
+## Play49 — Understanding Entities in JPA
 
-Play49 se Play52 tak ke notes isi document mein un lessons par kaam karte waqt add honge. Entity fields, repository behavior aur persistence-test expectations ko project/course details se verify karenge; unverified behavior assume nahi karenge.
+**Course duration:** 10 minutes · **Course status:** Not completed
+
+JPA entity ek Java class hai jiska state relational table ke saath map hota hai. Is project mein `User` par `@Entity` laga hai, `id` par `@Id` aur `@GeneratedValue(strategy = GenerationType.IDENTITY)` hain. `name` default mapping ke through ek column banta hai. Explicit `@Table`/`@Column` tab add karo jab database names ya constraints ko customize karna ho.
+
+JPA provider ko entity create karne ke liye no-argument constructor chahiye. Entity fields `private` rakh sakte hain; yahan getters/setters application aur JSON binding ke liye maujood hain. Generated ID ko create request se trust nahi karna chahiye: `UserService.addUser` save se pehle ID `null` karta hai, phir database generated ID assign karta hai.
+
+```text
+User Java object
+    └── @Entity → user table
+          ├── id   → primary key, database-generated
+          └── name → column
+```
+
+**Common mistakes:** `@Entity` ya primary key annotation bhoolna; JPA ke no-argument constructor ko hata dena; generated ID ko application code se assign karna; in-memory H2 ko restart ke baad durable samajhna.
+
+**Recap:** Entity class persistence mapping define karti hai. Is project mein `User` entity, `id` generated key, aur `name` mapped field hai.
+
+## Play50 — Defining JPA Repositories
+
+**Course duration:** 5 minutes · **Course status:** Not completed
+
+`UserRepository` `JpaRepository<User, Long>` extend karti hai. Pehla type entity hai, doosra uska ID type. Spring Data JPA application startup par repository implementation banata hai; basic CRUD ke liye handwritten DAO class ki zaroorat nahi.
+
+```java
+public interface UserRepository extends JpaRepository<User, Long> {
+}
+```
+
+Isse `findAll`, `findById`, aur `save` jaise operations milte hain. Custom finder ki zaroorat par method naming convention ya query annotation use kar sakte hain, par abhi API ko custom query ki zaroorat nahi.
+
+**Recap:** Repository persistence operations ka boundary hai. Service is interface ko inject karti hai, controller repository ko seedha call nahi karta.
+
+## Play51 — Making User Persistent
+
+**Course duration:** 9 minutes · **Course status:** Not completed
+
+`UserService` ab `List<User>` aur manually incremented ID nahi rakhti. Constructor injection se `UserRepository` milta hai; list/read/create/update operations repository par delegate hote hain:
+
+| Service method | Repository operation | Behavior |
+|---|---|---|
+| `getAllUsers()` | `findAll()` | Saare persisted users |
+| `addUser(user)` | `save(user)` | ID clear karke naya user insert |
+| `findUserById(id)` | `findById(id)` | `Optional<User>` ke roop mein result |
+| `updateUser(id, user)` | `findById`, then `save` | Milne par name update; missing ID par empty result |
+
+Update flow pehle record dhoondhta hai, isliye missing ID par naya record accidentally create nahi hota. `save` updated state ko persist karta hai. Controller ka `Optional` handling same rehta hai aur missing user ke liye 404 bhej sakta hai.
+
+**Execution flow:** HTTP request → `UserController` → `UserService` → `UserRepository` → Hibernate/JPA → H2. Repository API se data storage details service/controller se alag rehti hain.
+
+**Recap:** Service business flow coordinate karti hai; repository database operations karti hai. H2 URL `jdbc:h2:mem:userdb` hai, isliye app/process restart par data reset hota hai.
+
+## Play52 — Testing Changes
+
+**Course duration:** 15 minutes · **Course status:** Not completed
+
+Persistence change ke baad `mvn test` run kiya: **BUILD SUCCESS**, 1 test run, 0 failures, 0 errors. Spring context/JPA initialization ke saath existing MockMvc test ne create, list, get, update aur unknown-ID GET behavior verify kiya. Process restart behavior is test mein cover nahi hota.
+
+### Verification checklist
+
+1. `mvn test` se Spring context startup, entity scanning, repository creation aur H2 integration check karo — is workspace mein yeh pass hua.
+2. Existing MockMvc test `POST /users` par `{"name":"Asha"}` bhejkar generated `id` aur name verify karta hai.
+3. Test `GET /users` aur `GET /users/1` se saved record read karta hai.
+4. Test `PUT /users/1` se name update karke agle GET mein updated value check karta hai.
+5. Test unknown ID ke GET par 404 check karta hai. Unknown ID ke PUT par 404 ko alag manual/API check se verify karo.
+6. App restart karke verify karo ki in-memory H2 data reset hota hai. Restart persistence chahiye toh file-backed datasource ya durable database configure karna hoga; yeh behavior abhi manually verify nahi hua.
+
+`spring.jpa.hibernate.ddl-auto=update` development learning ke liye hai, production schema migration ka replacement nahi. H2 par successful checks production database compatibility prove nahi karte; target database par alag integration verification chahiye.
+
+### Section recap
+
+Section 4 ka in-memory user API ab JPA repository ke through H2 se users read/write karne ke liye structured hai. `User` entity mapping deti hai, `UserRepository` CRUD boundary hai, aur `UserService` operations coordinate karti hai. `mvn test` mein existing API integration test pass hua. Process restart behavior aur unknown-ID PUT ka manual check pending hai. Course-status table video/course completion track karti hai aur is implementation review se alag hai.
