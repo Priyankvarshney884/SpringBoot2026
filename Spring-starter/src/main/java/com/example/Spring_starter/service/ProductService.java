@@ -4,8 +4,8 @@ import com.example.Spring_starter.model.Product;
 import com.example.Spring_starter.repository.ProductRepository;
 import org.springframework.stereotype.Service;
 
-import java.util.Optional;
 import java.util.List;
+import java.util.Optional;
 
 @Service
 public class ProductService {
@@ -24,6 +24,24 @@ public class ProductService {
 
     public List<Product> getAllProducts() {
         return productRepository.findAll();
+    }
+
+    public Optional<Product> getProductById(Long id) {
+        return productRepository.findById(id);
+    }
+
+    public List<Product> searchProductsByName(String name) {
+        return productRepository.findByNameContainingIgnoreCase(name);
+    }
+
+    public boolean deleteProduct(Long id) {
+        // Delete se pehle existence check karke unknown ID ko controller tak clearly batate hain.
+        if (!productRepository.existsById(id)) {
+            return false;
+        }
+
+        productRepository.deleteById(id);
+        return true;
     }
 
     public Optional<Product> updateProduct(Long id, Product updatedProduct) {
