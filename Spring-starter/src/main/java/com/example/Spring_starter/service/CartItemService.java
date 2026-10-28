@@ -10,6 +10,8 @@ import jakarta.persistence.EntityNotFoundException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.List;
+
 @Service
 public class CartItemService {
 
@@ -42,12 +44,13 @@ public class CartItemService {
                 .orElseGet(() -> {
                     CartItem newItem = new CartItem();
                     newItem.setUser(user);
-                    newItem.setProduct(product);
                     newItem.setPrice(product.getPrice());
                     newItem.setQuantity(0);
                     return newItem;
                 });
 
+        // Response mapper ko transaction ke baad product fields padhne ke liye loaded entity dete hain.
+        cartItem.setProduct(product);
         int updatedQuantity = cartItem.getQuantity() + quantity;
         if (product.getStock() == null || updatedQuantity > product.getStock()) {
             throw new IllegalStateException("Requested quantity exceeds available stock.");
@@ -56,5 +59,20 @@ public class CartItemService {
         // Existing product par quantity add hoti hai; naya item product ka current unit price rakhta hai.
         cartItem.setQuantity(updatedQuantity);
         return cartItemRepository.save(cartItem);
+    }
+
+    @Transactional
+    public boolean removeProductFromCart(Long userId, Long productId) {
+        return cartItemRepository.findByUser_IdAndProduct_Id(userId, productId)
+                .map(cartItem -> {
+                    cartItemRepository.delete(cartItem);
+                    return true;
+                })
+                .orElse(false);
+    }
+
+    @Transactional(readOnly = true)
+    public List<CartItem> getCartByUserId(Long userId) {
+        return cartItemRepository.findByUser_Id(userId);
     }
 }
