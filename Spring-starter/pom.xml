@@ -56,12 +56,11 @@
 			<scope>runtime</scope>
 		</dependency>
 
-		<!-- Spring Boot 4 mein browser-based H2 console ka auto-configuration module. -->
 		<dependency>
 			<groupId>org.springframework.boot</groupId>
-			<artifactId>spring-boot-h2console</artifactId>
+			<artifactId>spring-boot-starter-test</artifactId>
+			<scope>test</scope>
 		</dependency>
-
 		<dependency>
 			<groupId>org.springframework.boot</groupId>
 			<artifactId>spring-boot-starter-webmvc-test</artifactId>
